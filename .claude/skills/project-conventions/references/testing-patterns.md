@@ -9,12 +9,15 @@
 For universal Miri rules and decision flowchart, see
 `~/.claude/skills/rust-implementation/references/testing.md` → "Miri" section.
 
-### Per-Test Skip Categories
+### Per-Crate Miri Strategy
 
-1. **File system (tempfile)** — Tests using `tempfile::tempdir()` or real file I/O. Miri has limited file system support.
-2. **FFI / C bindings (rusqlite)** — All tests use SQLite via C FFI. Entire crate excluded from Miri CI.
-3. **Network I/O (reqwest, wiremock)** — HTTP client and mock server use unsupported socket syscalls.
-4. **Process spawning (Command)** — Tests that execute external tools via `std::process::Command`.
-5. **TLS / Crypto (reqwest + rustls)** — included in Network I/O count. TLS initialization is extremely slow under Miri (~10 min/call).
-6. **Regex compilation** — included in tests that indirectly trigger `regex::Regex::new()`. DFA construction under interpretation is extremely slow (~2-6 min/test).
-7. **Environment variables** — Tests calling `std::env::set_var` or relying on `HOME`/`current_dir`.
+| Crate                       | Miri | Reason                                                             |
+| --------------------------- | ---- | ------------------------------------------------------------------ |
+| `dna-detector`              | Yes  | Pure Rust, `image` crate only. All tests Miri-safe.                |
+| `dna-capture`               | No   | Windows FFI (`windows`, `windows-capture`). Entire crate excluded. |
+| `dna-assistant` (src-tauri) | No   | Tauri runtime, Windows APIs. Entire crate excluded.                |
+
+### Per-Test Skip Categories (dna-detector)
+
+1. **Image I/O** — Tests loading PNG fixtures. Miri-safe if using in-memory `RgbaImage::new()`.
+2. **Floating-point edge cases** — HSV conversion tests. Miri-safe (no FFI).

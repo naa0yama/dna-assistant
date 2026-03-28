@@ -1,6 +1,6 @@
 [env]
 OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:5080/api/default"
-RUST_LOG = "warn,brust=trace"
+RUST_LOG = "warn,dna=trace"
 RUSTC_WRAPPER = "sccache"
 ## renovate: datasource=github-releases packageName=openobserve/openobserve versioning=semver automerge=true
 OPENOBSERVE_VERSION = "v0.70.0"
@@ -18,10 +18,13 @@ ghalint = "1.5.3"
 usage = "3.0.0"
 zizmor = "1.16.0"
 codeql = { version = "latest", bin_path = "codeql", platforms = { linux-x64 = { asset_pattern = "codeql-linux64.zip" }, macos-arm64 = { asset_pattern = "codeql-osx64.zip" }, macos-x64 = { asset_pattern = "codeql-osx64.zip" }, windows-x64 = { asset_pattern = "codeql-win64.zip" } } }
+"cargo:tauri-cli" = "latest"
 
 [tasks.setup]
 description = "Initial project setup"
-run = "chmod +x .githooks/*"
+run = """
+if [ -d .githooks ]; then chmod +x .githooks/*; fi
+"""
 
 [tasks.build]
 description = "Debug build"
@@ -39,10 +42,19 @@ run = "cargo build --timings"
 description = "Compile check"
 run = "cargo check --all-targets --all-features"
 
+[tasks."check:core"]
+description = "Compile check (cross-platform crates only, DevContainer OK)"
+run = "cargo check -p dna-detector --all-targets --all-features"
+
 [tasks.test]
 description = "Run tests"
 env = { OTEL_EXPORTER_OTLP_ENDPOINT = "" }
 run = "cargo test --all-targets"
+
+[tasks."test:core"]
+description = "Run tests (cross-platform crates only, DevContainer OK)"
+env = { OTEL_EXPORTER_OTLP_ENDPOINT = "" }
+run = "cargo test -p dna-detector --all-targets"
 
 [tasks."test:watch"]
 description = "TDD watch mode"
@@ -98,6 +110,10 @@ run = "cargo clippy --all-targets --all-features"
 description = "Run clippy lints (warnings as errors)"
 run = "cargo clippy --all-targets --all-features -- -D warnings"
 
+[tasks."clippy:core"]
+description = "Run clippy lints (cross-platform crates only, DevContainer OK)"
+run = "cargo clippy -p dna-detector --all-targets --all-features -- -D warnings"
+
 [tasks.ast-grep]
 description = "Run ast-grep custom rules check"
 run = "sg scan --error --color never"
@@ -126,6 +142,18 @@ run = "cargo deny check"
 [tasks.miri]
 description = "Run Miri to detect undefined behavior"
 run = "cargo +nightly miri test"
+
+[tasks."miri:core"]
+description = "Run Miri (cross-platform crates only, DevContainer OK)"
+run = "cargo +nightly miri test -p dna-detector"
+
+[tasks."tauri:dev"]
+description = "Start Tauri dev mode"
+run = "cargo tauri dev"
+
+[tasks."tauri:build"]
+description = "Build Tauri release bundle"
+run = "cargo tauri build"
 
 [tasks.pre-commit]
 description = "Pre-commit checks (fast)"
