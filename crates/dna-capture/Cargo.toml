@@ -1,0 +1,18 @@
+[package]
+name = "dna-capture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Windows screen capture and OCR backends for DNA Online assistant"
+
+[dependencies]
+anyhow = { workspace = true }
+image = { workspace = true }
+tracing = { workspace = true }
+
+# Windows-specific dependencies will be added in Phase 2:
+# windows-capture, win-screenshot, windows (for OCR and Win32 API)
+
+[lints]
+workspace = true
