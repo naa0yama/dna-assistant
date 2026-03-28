@@ -1,0 +1,11 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Jaeger: Stop",
+			"type": "shell",
+			"command": "mise run jaeger:stop",
+			"problemMatcher": []
+		}
+	]
+}

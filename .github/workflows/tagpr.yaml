@@ -1,0 +1,141 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: tagpr
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [labeled, unlabeled]
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false # zizmor: ignore[concurrency-limits] tag creation must not be cancelled mid-flight
+
+jobs:
+  tagpr:
+    name: tagpr
+    env:
+      MISE_ENV: tagpr
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.pull_request.head.ref, 'tagpr-from-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.tagpr.outputs.tag }}
+    permissions:
+      contents: write # Required to create tags and update files
+      pull-requests: write # Required to create and update pull requests
+      issues: write # Required to manage release issues
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Cache dprint plugins
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.cache/dprint
+          key: dprint-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dprint.jsonc') }}
+          restore-keys: |
+            dprint-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: jdx/mise-action@c1ecc8f748cd28cdeabf76dab3cccde4ce692fe4 # v4.0.0
+        with:
+          install_args: dprint rust
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - id: tagpr
+        uses: Songmu/tagpr@b3fb89424646b06c8aa460f50307c60b6a541425 # v1.17.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Parse tagpr pull request output
+        id: tagpr-pr
+        if: steps.tagpr.outputs.pull_request != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_JSON: ${{ steps.tagpr.outputs.pull_request }}
+        with:
+          script: |
+            const pr = JSON.parse(process.env.PR_JSON);
+            core.setOutput('branch', pr.head.ref);
+            core.setOutput('number', String(pr.number));
+
+      - name: Format CHANGELOG.md
+        id: fmt-changelog
+        if: steps.tagpr.outputs.tag == '' && steps.tagpr-pr.outputs.branch != ''
+        run: |
+          git checkout -- .
+          git clean -fd
+          git fetch origin "$BRANCH"
+          git checkout "$BRANCH"
+          dprint fmt CHANGELOG.md
+          if git diff --quiet CHANGELOG.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          BRANCH: ${{ steps.tagpr-pr.outputs.branch }}
+
+      - name: Commit formatted CHANGELOG.md
+        if: steps.fmt-changelog.outputs.changed == 'true'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          BRANCH: ${{ steps.tagpr-pr.outputs.branch }}
+        with:
+          script: |
+            const fs = require('fs');
+            const branch = process.env.BRANCH;
+            const content = fs.readFileSync('CHANGELOG.md');
+            const encoded = content.toString('base64');
+
+            const { data: ref } = await github.rest.git.getRef({
+              ...context.repo,
+              ref: `heads/${branch}`,
+            });
+
+            await github.graphql(`
+              mutation($input: CreateCommitOnBranchInput!) {
+                createCommitOnBranch(input: $input) {
+                  commit { oid }
+                }
+              }
+            `, {
+              input: {
+                branch: {
+                  repositoryNameWithOwner: `${context.repo.owner}/${context.repo.repo}`,
+                  branchName: branch,
+                },
+                expectedHeadOid: ref.object.sha,
+                message: { headline: '[tagpr] format CHANGELOG.md with dprint' },
+                fileChanges: {
+                  additions: [{
+                    path: 'CHANGELOG.md',
+                    contents: encoded,
+                  }],
+                },
+              },
+            });
+
+  release:
+    name: Build and Release
+    needs: tagpr
+    if: needs.tagpr.outputs.tag != ''
+    permissions:
+      contents: write # Required to create releases and tags
+      actions: write # Required for build job to upload artifacts
+      id-token: write # Required for build provenance attestation
+      attestations: write # Required for build provenance attestation
+    uses: ./.github/workflows/release.yaml
+    with:
+      tag: ${{ needs.tagpr.outputs.tag }}

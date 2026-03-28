@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-action.json
+name: "Setup Rust"
+description: "Setup rust"
+inputs:
+  sccache:
+    description: "sccache version"
+    required: false
+    default: ""
+  sccache_disable_annotations:
+    description: "sccache disable_annotations"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+      with:
+        disable_annotations: ${{ inputs.sccache_disable_annotations == 'true' }}
+        version: ${{ inputs.sccache }}
+
+    - name: Set RUSTC_WRAPPER
+      shell: bash
+      run: echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+    - name: Cache rustup
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      with:
+        path: |
+          ~/.rustup/settings.toml
+          ~/.rustup/toolchains/1.*
+        key: v0-rust-rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/rust-toolchain.toml') }}
+
+    - uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+      with:
+        cache-shared-key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}

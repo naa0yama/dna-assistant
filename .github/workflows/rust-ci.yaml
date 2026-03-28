@@ -1,0 +1,178 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Rust CI
+on:
+  workflow_call: {}
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: rust-ci-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # Required to checkout the repository
+    outputs:
+      sccache: ${{ steps.versions.outputs.sccache }}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check Rust version consistency
+        run: |
+          rust_version=$(grep -E '^FROM rust:[0-9]+\.[0-9]+\.[0-9]+' Dockerfile | sed -E 's/FROM rust:([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          tool_version=$(grep -E '^channel = "[0-9]+\.[0-9]+\.[0-9]+"' rust-toolchain.toml | sed -E 's/channel = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
+          if [ "$rust_version" != "$tool_version" ]; then
+            echo "ERROR: Rust version mismatch! Dockerfile: $rust_version, rust-toolchain.toml: $tool_version"
+            exit 1
+          fi
+
+      - name: Extract tool versions
+        id: versions
+        run: |
+          sccache_version=$(grep -E '^ARG SCCACHE_VERSION=v?[0-9]+\.[0-9]+\.[0-9]+' Dockerfile | sed -E 's/ARG SCCACHE_VERSION=(v?[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          echo "sccache=${sccache_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Rust setup
+        uses: ./.github/actions/act-setup-rust
+        with:
+          sccache: ${{ steps.versions.outputs.sccache }}
+          sccache_disable_annotations: true
+
+      - name: Cache mise tools
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.local/share/mise
+          key: mise-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Cache dprint plugins
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.cache/dprint
+          key: dprint-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dprint.jsonc') }}
+          restore-keys: |
+            dprint-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: jdx/mise-action@c1ecc8f748cd28cdeabf76dab3cccde4ce692fe4 # v4.0.0
+        with:
+          cache: false
+
+      - name: Check formatting
+        run: |
+          set -euxo pipefail
+          mise run fmt:check
+
+      - name: Run clippy
+        run: |
+          set -euxo pipefail
+          mise run clippy:strict
+
+  cross-check:
+    name: cross-check (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    needs: fmt
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-gnu
+            cross-pkgs: gcc-mingw-w64-x86-64
+          - target: aarch64-unknown-linux-gnu
+            cross-pkgs: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Cache cross-compilation packages
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/cross-apt-cache
+          key: cross-apt-${{ runner.arch }}-${{ matrix.target }}-v1
+
+      - name: Install cross-compilation toolchain
+        env:
+          CROSS_PKGS: ${{ matrix.cross-pkgs }}
+        run: |
+          mkdir -p ~/cross-apt-cache/partial
+          sudo apt-get update -qq
+          # shellcheck disable=SC2086
+          sudo apt-get install -y --no-install-recommends \
+            -o Dir::Cache::Archives="${HOME}/cross-apt-cache" \
+            ${CROSS_PKGS}
+          sudo chown -R "$(id -u):$(id -g)" ~/cross-apt-cache
+
+      - name: Add target
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "${TARGET}"
+
+      - name: Rust setup
+        uses: ./.github/actions/act-setup-rust
+        with:
+          sccache: ${{ needs.fmt.outputs.sccache }}
+          sccache_disable_annotations: true
+
+      - name: Check compilation for ${{ matrix.target }}
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo check --target "${TARGET}"
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    needs: fmt
+    timeout-minutes: 15
+    permissions:
+      actions: read #         For octocov to retrieve previous reports from artifacts
+      contents: write #       For octocov to push badges to repository
+      pull-requests: write #  For octocov to comment on pull requests
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Rust setup
+        uses: ./.github/actions/act-setup-rust
+        with:
+          sccache: ${{ needs.fmt.outputs.sccache }}
+
+      - name: Cache mise tools
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.local/share/mise
+          key: mise-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: jdx/mise-action@c1ecc8f748cd28cdeabf76dab3cccde4ce692fe4 # v4.0.0
+        with:
+          cache: false
+
+      - name: Generate coverage report
+        run: |
+          set -euxo pipefail
+          mise run coverage
+
+      - name: Upload coverage
+        uses: k1LoW/octocov-action@73d561f65d59e66899ed5c87e4621a913b5d5c20 # v1.5.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
