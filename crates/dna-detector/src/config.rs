@@ -115,3 +115,30 @@ impl Default for DetectionConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_has_valid_roi_ranges() {
+        let config = DetectionConfig::default();
+
+        // Skill ROI is within bounds
+        assert!(config.skill.roi.x + config.skill.roi.width <= 1.0);
+        assert!(config.skill.roi.y + config.skill.roi.height <= 1.0);
+
+        // Round ROI is within bounds
+        assert!(config.round.roi.x + config.round.roi.width <= 1.0);
+        assert!(config.round.roi.y + config.round.roi.height <= 1.0);
+
+        // Ally HP ROI is within bounds
+        assert!(config.ally_hp.roi.x + config.ally_hp.roi.width <= 1.0);
+        assert!(config.ally_hp.roi.y + config.ally_hp.roi.height <= 1.0);
+
+        // Thresholds are positive
+        assert!(config.skill.icon_bright_threshold > 0.0);
+        assert!(config.round.text_presence_threshold > 0.0);
+        assert!(config.ally_hp.down_threshold > 0.0);
+    }
+}

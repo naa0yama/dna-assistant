@@ -115,3 +115,26 @@ fn init_otel() -> (
 
     (Some(layer), Some(provider))
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[cfg(feature = "otel")]
+    fn init_otel_returns_none_when_endpoint_empty() {
+        // OTEL_EXPORTER_OTLP_ENDPOINT is set to "" in test env (mise.toml)
+        // which is filtered out by .filter(|ep| !ep.is_empty())
+        let (layer, provider) = super::init_otel();
+        assert!(layer.is_none());
+        assert!(provider.is_none());
+    }
+
+    #[test]
+    fn telemetry_guard_drop_is_safe() {
+        // Guard with no provider should drop without panic
+        let guard = super::TelemetryGuard {
+            #[cfg(feature = "otel")]
+            tracer_provider: None,
+        };
+        drop(guard);
+    }
+}
