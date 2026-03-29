@@ -1,10 +1,9 @@
 [env]
-OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:5080/api/default"
+OTEL_EXPORTER_OTLP_ENDPOINT = "http://10.2.21.155:5080/api/dna-assistant"
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic ZGV2QG8yLnRlc3Q6ZGV2"
 RUST_LOG = "warn,dna=trace"
-RUSTC_WRAPPER = "sccache"
 ## renovate: datasource=github-releases packageName=openobserve/openobserve versioning=semver automerge=true
 OPENOBSERVE_VERSION = "v0.70.0"
-_.source = [".devcontainer/o2-env.sh"]
 
 [tools]
 "aqua:EmbarkStudios/cargo-deny" = "0.19.0"
@@ -19,6 +18,7 @@ usage = "3.0.0"
 zizmor = "1.16.0"
 codeql = { version = "latest", bin_path = "codeql", platforms = { linux-x64 = { asset_pattern = "codeql-linux64.zip" }, macos-arm64 = { asset_pattern = "codeql-osx64.zip" }, macos-x64 = { asset_pattern = "codeql-osx64.zip" }, windows-x64 = { asset_pattern = "codeql-win64.zip" } } }
 "cargo:tauri-cli" = "latest"
+rust = "1.93.1"
 
 [tasks.setup]
 description = "Initial project setup"

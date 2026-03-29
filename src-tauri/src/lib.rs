@@ -1,6 +1,14 @@
 //! Tauri v2 application setup and IPC command registration.
 
+#[allow(clippy::unreachable)] // Tauri command macro generates unreachable in Result paths
+mod commands;
+mod monitor;
+mod notification;
+mod settings;
 mod telemetry;
+
+use monitor::MonitorState;
+use tauri::Manager;
 
 /// Greet command for initial connectivity verification.
 #[tauri::command]
@@ -17,7 +25,24 @@ fn greet(name: &str) -> String {
 fn build() -> tauri::Result<tauri::App> {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .manage(MonitorState::new())
+        .setup(|app| {
+            // Load persisted settings from disk
+            let state = app.state::<MonitorState>();
+            state.load_config(app.handle());
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            commands::start_monitoring,
+            commands::stop_monitoring,
+            commands::get_status,
+            commands::get_capture_preview,
+            commands::get_settings,
+            commands::get_default_settings,
+            commands::save_settings,
+        ])
         .build(tauri::generate_context!())
 }
 

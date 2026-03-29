@@ -11,8 +11,10 @@
 		"windows": [
 			{
 				"title": "DNA Assistant",
-				"width": 420,
-				"height": 640,
+				"width": 860,
+				"height": 560,
+				"minWidth": 640,
+				"minHeight": 400,
 				"resizable": true
 			}
 		],

@@ -6,36 +6,277 @@
   <title>DNA Assistant</title>
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@2"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="min-h-screen bg-base-200">
-  <div class="container mx-auto p-4 max-w-md">
-    <h1 class="text-2xl font-bold mb-4">DNA Assistant</h1>
+<body class="h-screen overflow-hidden bg-base-200 flex">
 
-    <div class="card bg-base-100 shadow-xl mb-4">
-      <div class="card-body">
-        <h2 class="card-title text-sm">Status</h2>
-        <div class="flex items-center gap-2">
-          <span class="badge badge-outline" id="status-badge">Idle</span>
-        </div>
-      </div>
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar w-[200px] min-w-[200px] bg-base-300 flex flex-col transition-all duration-200">
+    <!-- Hamburger -->
+    <div class="p-2">
+      <button id="sidebar-toggle" class="btn btn-ghost btn-sm btn-square">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
     </div>
+    <!-- Nav items -->
+    <nav class="flex flex-col gap-1 px-2">
+      <a class="nav-item active" data-page="main">
+        <span class="nav-icon">&#x1F3E0;</span>
+        <span class="nav-label">Main</span>
+      </a>
+      <a class="nav-item" data-page="log">
+        <span class="nav-icon">&#x1F4CB;</span>
+        <span class="nav-label">Log</span>
+      </a>
+      <a class="nav-item" data-page="detection">
+        <span class="nav-icon">&#x1F50D;</span>
+        <span class="nav-label">Detection</span>
+      </a>
+      <a class="nav-item" data-page="settings">
+        <span class="nav-icon">&#x2699;</span>
+        <span class="nav-label">Settings</span>
+      </a>
+    </nav>
+  </aside>
 
-    <div class="card bg-base-100 shadow-xl mb-4">
-      <div class="card-body">
-        <h2 class="card-title text-sm">Connection Test</h2>
-        <div class="form-control">
-          <div class="input-group flex gap-2">
-            <input type="text" id="greet-input" placeholder="Your name"
-                   class="input input-bordered input-sm flex-1">
-            <button class="btn btn-primary btn-sm" id="greet-btn">Greet</button>
+  <!-- Main content -->
+  <main class="flex-1 flex flex-col overflow-hidden p-3 gap-3">
+
+    <!-- ============ Main Page ============ -->
+    <div id="page-main" class="page flex flex-col gap-3 flex-1 overflow-hidden">
+
+      <!-- Status + Control -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-3">
+          <div class="flex items-center gap-4 flex-wrap">
+            <span class="text-xs text-base-content/50 font-semibold uppercase">Status</span>
+            <span class="badge" id="status-badge">Idle</span>
+            <span class="text-sm text-base-content/60 font-mono">Frames: <span id="frames-count">0</span></span>
+            <span class="text-sm text-base-content/60 font-mono">Events: <span id="events-count">0</span></span>
+            <div class="flex-1"></div>
+            <button class="btn btn-primary btn-sm" id="start-btn">Start</button>
+            <button class="btn btn-error btn-sm" id="stop-btn" disabled>Stop</button>
           </div>
         </div>
-        <p id="greet-msg" class="text-sm mt-2 text-base-content/70"></p>
+      </div>
+
+      <!-- Detector Status -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-3">
+          <span class="text-xs text-base-content/50 font-semibold uppercase mb-1">Detectors</span>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="text-center">
+              <div class="text-xs text-base-content/50 mb-1">Skill</div>
+              <div class="detector-badge" id="det-skill" data-state="unknown">--</div>
+            </div>
+            <div class="text-center">
+              <div class="text-xs text-base-content/50 mb-1">Round</div>
+              <div class="detector-badge" id="det-round" data-state="unknown">--</div>
+            </div>
+            <div class="text-center">
+              <div class="text-xs text-base-content/50 mb-1">Dialog</div>
+              <div class="detector-badge" id="det-dialog" data-state="unknown">--</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Event Log (compact) -->
+      <div class="card bg-base-100 shadow-md flex-1 overflow-hidden flex flex-col">
+        <div class="card-body p-3 flex flex-col overflow-hidden">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-base-content/50 font-semibold uppercase">Event Log</span>
+            <button class="btn btn-ghost btn-xs" id="clear-log-btn">Clear</button>
+          </div>
+          <!-- Table header -->
+          <div class="log-header grid grid-cols-[80px_120px_1fr] gap-2 text-xs font-semibold text-base-content/50 px-1 py-1 bg-base-200 rounded">
+            <span>Time</span>
+            <span>Detector</span>
+            <span>Message</span>
+          </div>
+          <div class="overflow-y-auto flex-1" id="event-log">
+            <p class="text-sm text-base-content/30 p-2">No events yet</p>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
+
+    <!-- ============ Log Page ============ -->
+    <div id="page-log" class="page flex flex-col gap-3 flex-1 overflow-hidden hidden">
+      <div class="card bg-base-100 shadow-md flex-1 overflow-hidden flex flex-col">
+        <div class="card-body p-3 flex flex-col overflow-hidden">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-base-content/50 font-semibold uppercase">Event Log</span>
+            <button class="btn btn-ghost btn-xs" id="clear-log-full-btn">Clear</button>
+          </div>
+          <div class="log-header grid grid-cols-[80px_120px_1fr] gap-2 text-xs font-semibold text-base-content/50 px-1 py-1 bg-base-200 rounded">
+            <span>Time</span>
+            <span>Detector</span>
+            <span>Message</span>
+          </div>
+          <div class="overflow-y-auto flex-1" id="event-log-full">
+            <p class="text-sm text-base-content/30 p-2">No events yet</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ Detection Page ============ -->
+    <div id="page-detection" class="page flex flex-col gap-3 flex-1 overflow-hidden hidden">
+
+      <!-- Capture Info -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-3">
+          <div class="flex items-center gap-6 flex-wrap">
+            <span class="text-xs text-base-content/50 font-semibold uppercase">Capture</span>
+            <span class="text-sm text-base-content/80">Window: <span id="cap-window" class="text-base-content">--</span></span>
+            <span class="text-sm text-base-content/60 font-mono">Size: <span id="cap-size">--</span></span>
+            <span class="text-sm text-base-content/60 font-mono">Backend: <span id="cap-backend">--</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detector Table -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-3">
+          <span class="text-xs text-base-content/50 font-semibold uppercase mb-1">Detectors</span>
+          <div class="log-header grid grid-cols-[140px_80px_160px_100px] gap-2 text-xs font-semibold text-base-content/50 px-1 py-1 bg-base-200 rounded">
+            <span>Detector</span>
+            <span>State</span>
+            <span>ROI</span>
+            <span>Last Changed</span>
+          </div>
+          <div id="detector-table">
+            <div class="grid grid-cols-[140px_80px_160px_100px] gap-2 px-1 py-1.5 text-sm border-b border-base-200">
+              <span class="text-base-content/80">SkillDetector</span>
+              <span><span class="detector-badge-sm" id="det-skill-full" data-state="unknown">--</span></span>
+              <span class="text-xs font-mono text-base-content/40">x=0.878 y=0.880</span>
+              <span class="text-xs font-mono text-base-content/40" id="det-skill-time">--</span>
+            </div>
+            <div class="grid grid-cols-[140px_80px_160px_100px] gap-2 px-1 py-1.5 text-sm bg-base-200/30 border-b border-base-200">
+              <span class="text-base-content/80">RoundDetector</span>
+              <span><span class="detector-badge-sm" id="det-round-full" data-state="unknown">--</span></span>
+              <span class="text-xs font-mono text-base-content/40">x=0.000 y=0.256</span>
+              <span class="text-xs font-mono text-base-content/40" id="det-round-time">--</span>
+            </div>
+            <div class="grid grid-cols-[140px_80px_160px_100px] gap-2 px-1 py-1.5 text-sm border-b border-base-200">
+              <span class="text-base-content/80">DialogDetector</span>
+              <span><span class="detector-badge-sm" id="det-dialog-full" data-state="unknown">--</span></span>
+              <span class="text-xs font-mono text-base-content/40">x=0.310 y=0.450</span>
+              <span class="text-xs font-mono text-base-content/40" id="det-dialog-time">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Capture Preview -->
+      <div class="card bg-base-100 shadow-md flex-1 overflow-hidden flex flex-col">
+        <div class="card-body p-3 flex flex-col overflow-hidden">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-base-content/50 font-semibold uppercase">Capture Preview</span>
+            <span class="text-xs text-base-content/40 font-mono" id="cap-frame-timing"></span>
+          </div>
+          <div class="relative flex-1 bg-base-300 rounded-lg flex items-center justify-center overflow-hidden">
+            <div id="capture-placeholder" class="text-center text-base-content/20">
+              <div class="text-4xl mb-2">&#x1F3AE;</div>
+              <div class="text-sm">Latest captured frame</div>
+            </div>
+            <img id="capture-preview" class="hidden max-w-full max-h-full object-contain" alt="capture preview">
+            <span id="cap-img-size" class="absolute top-2 right-2 text-xs font-mono bg-black/60 text-base-content/60 px-2 py-0.5 rounded hidden"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ Settings Page ============ -->
+    <div id="page-settings" class="page flex flex-col gap-3 flex-1 overflow-y-auto hidden">
+
+      <!-- Capture -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-4">
+          <span class="text-xs text-base-content/50 font-semibold uppercase mb-2">Capture</span>
+          <div class="grid grid-cols-2 gap-x-6 gap-y-3">
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Capture interval (ms)</span></div>
+              <input type="number" min="200" max="10000" step="100" class="input input-bordered input-sm" data-key="capture_interval">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Window search interval (ms)</span></div>
+              <input type="number" min="500" max="30000" step="500" class="input input-bordered input-sm" data-key="window_search_interval">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Preview interval (ms)</span></div>
+              <input type="number" min="500" max="30000" step="500" class="input input-bordered input-sm" data-key="preview_interval">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Max capture retries</span></div>
+              <input type="number" min="1" max="10" step="1" class="input input-bordered input-sm" data-key="max_capture_retries">
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detection -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-4">
+          <span class="text-xs text-base-content/50 font-semibold uppercase mb-2">Detection</span>
+          <div class="grid grid-cols-2 gap-x-6 gap-y-3">
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Skill debounce (ms)</span></div>
+              <input type="number" min="0" max="10000" step="100" class="input input-bordered input-sm" data-key="skill_debounce">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Round transition suppress (sec)</span></div>
+              <input type="number" min="0" max="60" step="1" class="input input-bordered input-sm" data-key="round_transition_suppress">
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notifications -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-4">
+          <span class="text-xs text-base-content/50 font-semibold uppercase mb-2">Notifications</span>
+          <div class="grid grid-cols-2 gap-x-6 gap-y-3">
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Notification cooldown (sec)</span></div>
+              <input type="number" min="5" max="300" step="5" class="input input-bordered input-sm" data-key="notification_cooldown">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Skill sustain (sec)</span></div>
+              <input type="number" min="1" max="30" step="1" class="input input-bordered input-sm" data-key="notify_skill_sustain">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Dialog sustain (sec)</span></div>
+              <input type="number" min="1" max="30" step="1" class="input input-bordered input-sm" data-key="notify_dialog_sustain">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Round sustain (sec)</span></div>
+              <input type="number" min="1" max="30" step="1" class="input input-bordered input-sm" data-key="notify_round_sustain">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Round cooldown (sec)</span></div>
+              <input type="number" min="5" max="120" step="5" class="input input-bordered input-sm" data-key="notify_round_cooldown">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Ally HP sustain (sec)</span></div>
+              <input type="number" min="1" max="60" step="1" class="input input-bordered input-sm" data-key="notify_ally_hp_sustain">
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save / Reset -->
+      <div class="flex gap-2 justify-end pb-2">
+        <button class="btn btn-ghost btn-sm" id="settings-reset-btn">Reset to defaults</button>
+        <button class="btn btn-primary btn-sm" id="settings-save-btn">Save</button>
+      </div>
+
+    </div>
+
+  </main>
 
   <script src="main.js"></script>
 </body>
