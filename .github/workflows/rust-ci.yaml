@@ -139,7 +139,7 @@ jobs:
       - name: Check compilation for ${{ matrix.target }}
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo check --target "${TARGET}"
+        run: cargo check -p dna-detector -p dna-capture --target "${TARGET}"
 
   test:
     name: test
