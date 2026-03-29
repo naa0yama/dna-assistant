@@ -14,18 +14,51 @@
 //! `cargo check` / `cargo test` / `cargo clippy` in `DevContainer`.
 //!
 //! ```toml
-//! # Phase 2: conditional dependencies in Cargo.toml
 //! [target.'cfg(target_os = "windows")'.dependencies]
-//! windows-capture = "1"
-//! windows = { version = "0.61", features = [...] }
+//! windows-capture = "1.5"
+//! win-screenshot = "4.0"
+//! windows = { version = "0.62", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
 //! ```
 
-// Phase 2: uncomment when Windows capture is implemented
-// #[cfg(target_os = "windows")]
-// pub mod wgc;
-// #[cfg(target_os = "windows")]
-// pub mod printwindow;
-// #[cfg(target_os = "windows")]
-// pub mod window;
+use anyhow::Result;
+use image::RgbaImage;
+
+#[cfg(target_os = "windows")]
+pub mod printwindow;
+#[cfg(target_os = "windows")]
+pub mod wgc;
+#[cfg(target_os = "windows")]
+pub mod window;
+
+// Phase 2: uncomment when OCR is implemented
 // #[cfg(target_os = "windows")]
 // pub mod ocr;
+
+/// Backend-agnostic screen capture interface.
+///
+/// Each backend (WGC, `PrintWindow`) implements this trait, enabling the
+/// application layer to swap backends transparently.
+pub trait Capture {
+    /// Capture a single frame from the target window.
+    ///
+    /// Returns the full window content including the titlebar.
+    /// Titlebar removal is handled by `dna-detector::titlebar::crop_titlebar()`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the capture fails (e.g., window closed,
+    /// API unavailable, or backend-specific failure).
+    fn capture_frame(&mut self) -> Result<RgbaImage>;
+
+    /// Check whether the target window still exists.
+    fn is_window_alive(&self) -> bool;
+}
+
+/// Available capture backends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureBackend {
+    /// Windows Graphics Capture API (primary, GPU-accelerated).
+    WindowsGraphicsCapture,
+    /// `PrintWindow` API (fallback).
+    PrintWindow,
+}
