@@ -47,9 +47,9 @@ description = "Compile check (cross-platform crates only, DevContainer OK)"
 run = "cargo check -p dna-detector --all-targets --all-features"
 
 [tasks.test]
-description = "Run tests"
+description = "Run tests (excludes Tauri app — WebView2 DLL unavailable in test harness)"
 env = { OTEL_EXPORTER_OTLP_ENDPOINT = "" }
-run = "cargo test --all-targets"
+run = "cargo test --workspace --all-targets --exclude dna-assistant"
 
 [tasks."test:core"]
 description = "Run tests (cross-platform crates only, DevContainer OK)"
@@ -79,14 +79,14 @@ cargo test --all-targets
 description = "Generate LCOV coverage report and verify thresholds"
 env = { OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:19999" }
 run = """
-cargo llvm-cov --all-features --fail-under-lines 90
-cargo llvm-cov --all-features --lcov --output-path target/lcov.info
+cargo llvm-cov --workspace --all-features --fail-under-lines 90 --exclude dna-assistant
+cargo llvm-cov --workspace --all-features --lcov --output-path target/lcov.info --exclude dna-assistant
 """
 
 [tasks."coverage:html"]
 description = "Generate HTML coverage report and open"
 env = { OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:19999" }
-run = "cargo llvm-cov --all-features --html --open"
+run = "cargo llvm-cov --workspace --all-features --html --open --exclude dna-assistant"
 
 [tasks.fmt]
 description = "Run all formatters"
