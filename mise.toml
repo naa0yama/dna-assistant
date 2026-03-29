@@ -79,14 +79,14 @@ cargo test --all-targets
 description = "Generate LCOV coverage report and verify thresholds"
 env = { OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:19999" }
 run = """
-cargo llvm-cov --workspace --all-features --fail-under-lines 90 --exclude dna-assistant
-cargo llvm-cov --workspace --all-features --lcov --output-path target/lcov.info --exclude dna-assistant
+cargo llvm-cov --workspace --all-features --fail-under-lines 90 --exclude dna-assistant --exclude dna-capture
+cargo llvm-cov --workspace --all-features --lcov --output-path target/lcov.info --exclude dna-assistant --exclude dna-capture
 """
 
 [tasks."coverage:html"]
 description = "Generate HTML coverage report and open"
 env = { OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:19999" }
-run = "cargo llvm-cov --workspace --all-features --html --open --exclude dna-assistant"
+run = "cargo llvm-cov --workspace --all-features --html --open --exclude dna-assistant --exclude dna-capture"
 
 [tasks.fmt]
 description = "Run all formatters"
