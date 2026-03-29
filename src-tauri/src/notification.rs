@@ -216,14 +216,16 @@ impl NotificationManager {
     fn send_toast(title: &str, body: &str) {
         debug!(title, body, "sending toast notification");
 
-        let app_id = "com.naa0yama.dna-assistant";
-        let result = notify_rust::Notification::new()
-            .app_id(app_id)
-            .summary(title)
-            .body(body)
+        let mut notification = notify_rust::Notification::new();
+        notification.summary(title).body(body);
+
+        #[cfg(target_os = "windows")]
+        notification
+            .app_id("com.naa0yama.dna-assistant")
             .sound_name("Default")
-            .timeout(notify_rust::Timeout::Milliseconds(25_000))
-            .show();
+            .timeout(notify_rust::Timeout::Milliseconds(25_000));
+
+        let result = notification.show();
 
         if let Err(e) = result {
             warn!(%e, "failed to send toast notification");
