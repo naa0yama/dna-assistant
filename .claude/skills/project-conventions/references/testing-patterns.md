@@ -14,26 +14,26 @@ For universal Miri rules and decision flowchart, see
 | Crate                       | Reason                                     | Tests |
 | --------------------------- | ------------------------------------------ | ----- |
 | `dna-capture`               | Windows FFI (`windows`, `windows-capture`) | 0     |
-| `dna-assistant` (src-tauri) | Tauri runtime, Windows APIs                | 2     |
+| `dna-assistant` (src-tauri) | Tauri runtime, Windows APIs                | 4     |
 
 ### Per-Crate Miri Strategy
 
 | Crate                       | Miri | Reason                                                             |
 | --------------------------- | ---- | ------------------------------------------------------------------ |
-| `dna-detector`              | Yes  | Pure Rust, `image` crate only. All tests Miri-safe.                |
+| `dna-detector`              | Yes  | Pure Rust. PNG fixture tests skipped (image crate I/O too slow).   |
 | `dna-capture`               | No   | Windows FFI (`windows`, `windows-capture`). Entire crate excluded. |
 | `dna-assistant` (src-tauri) | No   | Tauri runtime, Windows APIs. Entire crate excluded.                |
 
 ### Per-Test Skip Categories (dna-detector)
 
-1. **Image I/O** — Tests loading PNG fixtures. Miri-safe if using in-memory `RgbaImage::new()`.
+1. **Image I/O** — Tests loading PNG fixtures via `image::open()`. PNG decoding under Miri is extremely slow. Skipped with `#[cfg_attr(miri, ignore)]`. Detection logic itself is covered by unit tests using `RgbaImage::new()`.
 2. **Floating-point edge cases** — HSV conversion tests. Miri-safe (no FFI).
 
 ### Statistics
 
 | Metric                      | Count |
 | --------------------------- | ----- |
-| Total tests                 | 68    |
-| Miri-compatible             | 66    |
-| Miri-ignored (per-test)     | 0     |
-| Miri-excluded (crate-level) | 2     |
+| Total tests                 | 65    |
+| Miri-compatible             | 35    |
+| Miri-ignored (per-test)     | 30    |
+| Miri-excluded (crate-level) | 4     |

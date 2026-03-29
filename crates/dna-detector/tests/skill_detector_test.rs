@@ -44,6 +44,7 @@ const fn is_greyed(events: &[DetectionEvent]) -> bool {
 
 // --- READY: skill ON (active, showing "0") ---
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_on_s1_f60() {
     let detector = SkillDetector::new(fixture_config());
@@ -51,6 +52,7 @@ fn skill_on_s1_f60() {
     assert!(is_ready(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_on_s1_f70() {
     let detector = SkillDetector::new(fixture_config());
@@ -58,6 +60,7 @@ fn skill_on_s1_f70() {
     assert!(is_ready(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_on_s1_f85_dark_bg() {
     let detector = SkillDetector::new(fixture_config());
@@ -65,6 +68,7 @@ fn skill_on_s1_f85_dark_bg() {
     assert!(is_ready(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_on_s2_f10() {
     let detector = SkillDetector::new(fixture_config());
@@ -72,6 +76,7 @@ fn skill_on_s2_f10() {
     assert!(is_ready(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_on_s3_f20_exploration() {
     let detector = SkillDetector::new(fixture_config());
@@ -81,6 +86,7 @@ fn skill_on_s3_f20_exploration() {
 
 // --- READY: skill OFF (not active, showing SP cost) ---
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_off_s1_f28() {
     let detector = SkillDetector::new(fixture_config());
@@ -88,6 +94,7 @@ fn skill_off_s1_f28() {
     assert!(is_ready(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_ready_before_depletion() {
     let detector = SkillDetector::new(fixture_config());
@@ -95,6 +102,7 @@ fn skill_ready_before_depletion() {
     assert!(is_ready(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_ready_after_recovery() {
     let detector = SkillDetector::new(fixture_config());
@@ -104,6 +112,7 @@ fn skill_ready_after_recovery() {
 
 // --- GREYED: SP depleted ---
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_greyed_sp_depleted_t49() {
     let detector = SkillDetector::new(fixture_config());
@@ -111,6 +120,7 @@ fn skill_greyed_sp_depleted_t49() {
     assert!(is_greyed(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_greyed_sp_depleted_t50() {
     let detector = SkillDetector::new(fixture_config());
@@ -118,6 +128,7 @@ fn skill_greyed_sp_depleted_t50() {
     assert!(is_greyed(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_greyed_sp_depleted_t51() {
     let detector = SkillDetector::new(fixture_config());
@@ -125,6 +136,7 @@ fn skill_greyed_sp_depleted_t51() {
     assert!(is_greyed(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn skill_greyed_sp_recovering_t52() {
     let detector = SkillDetector::new(fixture_config());
@@ -149,6 +161,7 @@ const fn default_skill_config() -> SkillDetectorConfig {
     }
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn fhd_pipeline_ready_on() {
     let detector = SkillDetector::new(default_skill_config());
@@ -157,6 +170,7 @@ fn fhd_pipeline_ready_on() {
     assert!(is_ready(&detector.analyze(&game)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn fhd_pipeline_greyed() {
     let detector = SkillDetector::new(default_skill_config());
@@ -165,6 +179,7 @@ fn fhd_pipeline_greyed() {
     assert!(is_greyed(&detector.analyze(&game)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn fhd_pipeline_ready_off() {
     let detector = SkillDetector::new(default_skill_config());

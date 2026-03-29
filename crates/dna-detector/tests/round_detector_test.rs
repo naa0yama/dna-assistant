@@ -57,6 +57,7 @@ const fn is_visible(events: &[DetectionEvent]) -> bool {
 
 // --- Text visible (gameplay) ---
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn normal_filter_dark_background() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -64,6 +65,7 @@ fn normal_filter_dark_background() {
     assert!(is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn normal_filter_bright_combat() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -71,6 +73,7 @@ fn normal_filter_bright_combat() {
     assert!(is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn cinematiq_filter_visible() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -78,6 +81,7 @@ fn cinematiq_filter_visible() {
     assert!(is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn pro_filter_bright_background() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -85,6 +89,7 @@ fn pro_filter_bright_background() {
     assert!(is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn pro_s1_visible() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -92,6 +97,7 @@ fn pro_s1_visible() {
     assert!(is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn pro_s1_extreme_lightning_still_visible() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -101,6 +107,7 @@ fn pro_s1_extreme_lightning_still_visible() {
 
 // --- Text gone (result/cutscene) ---
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn normal_filter_result_screen() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -108,6 +115,7 @@ fn normal_filter_result_screen() {
     assert!(!is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn pro_filter_result_screen() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -115,6 +123,7 @@ fn pro_filter_result_screen() {
     assert!(!is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn pro_s1_cutscene() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -122,6 +131,7 @@ fn pro_s1_cutscene() {
     assert!(!is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn pro_s1_round_end_screen() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -131,6 +141,7 @@ fn pro_s1_round_end_screen() {
 
 // --- 720p ROI-only fixtures ---
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn hd_720p_visible_r23_roi() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -138,6 +149,7 @@ fn hd_720p_visible_r23_roi() {
     assert!(is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn hd_720p_visible_r24_roi() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -145,6 +157,7 @@ fn hd_720p_visible_r24_roi() {
     assert!(is_visible(&detector.analyze(&img)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn hd_720p_gone_round_end_roi() {
     let detector = RoundDetector::new(roi_fixture_config());
@@ -154,6 +167,7 @@ fn hd_720p_gone_round_end_roi() {
 
 // --- 720p full-frame with title bar (crop_titlebar + analyze pipeline) ---
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn hd_720p_titlebar_pipeline_visible() {
     let detector = RoundDetector::new(default_round_config());
@@ -162,6 +176,7 @@ fn hd_720p_titlebar_pipeline_visible() {
     assert!(is_visible(&detector.analyze(&game)));
 }
 
+#[cfg_attr(miri, ignore)]
 #[test]
 fn hd_720p_titlebar_pipeline_gone() {
     let detector = RoundDetector::new(default_round_config());
