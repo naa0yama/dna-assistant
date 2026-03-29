@@ -70,6 +70,89 @@ fn visible_nw_error() {
     );
 }
 
+/// Full-frame test using default config (not cropped fixture).
+/// The fixture includes the titlebar, so we apply `crop_titlebar` first.
+#[cfg_attr(miri, ignore)]
+#[test]
+fn visible_nw_error_1368x800_full_frame() {
+    use dna_detector::config::DetectionConfig;
+    use dna_detector::titlebar::crop_titlebar;
+
+    let raw = load_fixture("visible_nw_error_1368x800.png");
+    let frame = crop_titlebar(&raw);
+    let config = DetectionConfig::default();
+    let detector = DialogDetector::new(config.dialog);
+    let events = detector.analyze(&frame);
+    assert!(
+        is_visible(&events),
+        "expected DialogVisible for 1368x800 full frame, got {events:?}"
+    );
+}
+
+/// One-shot utility: mask the full-frame fixture to black outside the
+/// dialog ROI bounding box, then re-save as optimized PNG.
+/// Run manually: `cargo test -p dna-detector --test dialog_detector_test -- mask_fixture --ignored --nocapture`
+/// One-shot utility: mask the full-frame fixture to black outside the
+/// dialog ROI bounding box, then re-save as optimized PNG.
+/// Run manually: `cargo test -p dna-detector --test dialog_detector_test -- mask_fixture --ignored --nocapture`
+#[ignore = "one-shot fixture masking utility"]
+#[test]
+#[allow(
+    clippy::panic,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::as_conversions
+)]
+fn mask_fixture() {
+    use dna_detector::config::DetectionConfig;
+    use dna_detector::titlebar::crop_titlebar;
+    use image::Rgba;
+
+    let fixture = "visible_nw_error_1368x800.png";
+    let path = format!(
+        "{}/tests/fixtures/dialog/{fixture}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let raw = image::open(&path).unwrap().to_rgba8();
+    let (w, h) = (raw.width(), raw.height());
+
+    // Detect titlebar height
+    let game = crop_titlebar(&raw);
+    let tb = h - game.height();
+    let gh = f64::from(game.height());
+    let fw = f64::from(w);
+
+    let cfg = DetectionConfig::default();
+    // Keep union of bg_roi and text_roi with margin
+    let margin = 0.06;
+    let min_x = cfg.dialog.bg_roi.x.min(cfg.dialog.text_roi.x);
+    let min_y = cfg.dialog.bg_roi.y.min(cfg.dialog.text_roi.y);
+    let max_x = (cfg.dialog.bg_roi.x + cfg.dialog.bg_roi.width)
+        .max(cfg.dialog.text_roi.x + cfg.dialog.text_roi.width);
+    let max_y = (cfg.dialog.bg_roi.y + cfg.dialog.bg_roi.height)
+        .max(cfg.dialog.text_roi.y + cfg.dialog.text_roi.height);
+
+    let kx1 = ((min_x - margin).max(0.0) * fw) as u32;
+    let ky1 = tb + ((min_y - margin).max(0.0) * gh) as u32;
+    let kx2 = ((max_x + margin).min(1.0) * fw) as u32;
+    let ky2 = tb + ((max_y + margin).min(1.0) * gh) as u32;
+
+    let mut masked = raw;
+    let black = Rgba([0u8, 0, 0, 255]);
+    for y in 0..h {
+        for x in 0..w {
+            // Preserve titlebar so crop_titlebar() works on the masked image
+            if y >= tb && (x < kx1 || x >= kx2 || y < ky1 || y >= ky2) {
+                masked.put_pixel(x, y, black);
+            }
+        }
+    }
+
+    masked.save(&path).unwrap();
+    let size = std::fs::metadata(&path).unwrap().len();
+    eprintln!("Masked {fixture}: {w}x{h}, keep ({kx1},{ky1})-({kx2},{ky2}), {size} bytes");
+}
+
 // --- Dialog gone ---
 
 #[cfg_attr(miri, ignore)]

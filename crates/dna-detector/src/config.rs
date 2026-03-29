@@ -151,11 +151,11 @@ impl Default for DetectionConfig {
                     width: 0.50,
                     height: 0.15,
                 },
-                text_presence_threshold: 0.10,
-                bg_dark_threshold: 0.85,
-                brightness_min: 100,
+                text_presence_threshold: 0.05,
+                bg_dark_threshold: 0.70,
+                brightness_min: 80,
                 max_chroma: 60,
-                bg_brightness_max: 25,
+                bg_brightness_max: 50,
             },
         }
     }
