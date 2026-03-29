@@ -13,10 +13,7 @@ tracing = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 win-screenshot = "4.0"
-windows = { version = "0.62", features = [
-    "Win32_Foundation",
-    "Win32_UI_WindowsAndMessaging",
-] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 windows-capture = "1.5"
 
 [lints]
