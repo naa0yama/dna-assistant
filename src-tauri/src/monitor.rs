@@ -4,36 +4,65 @@
 //! feeding them through the detection pipeline, and sending notifications
 //! when trigger conditions are met.
 
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+// On Linux, only `MonitorState` (empty unit struct) is compiled.
+// All types, configuration, and the monitor loop are Windows-only.
+
+/// Minimal monitor state for non-Windows (only needed for `tauri::manage()`).
+#[cfg(not(target_os = "windows"))]
+#[derive(Debug, Default)]
+pub struct MonitorState;
+
+#[cfg(not(target_os = "windows"))]
+impl MonitorState {
+    /// Create a new stub state.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+// ---------- Windows implementation ----------
 
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "windows")]
+use std::sync::{Arc, Mutex};
+#[cfg(target_os = "windows")]
 use std::thread;
 #[cfg(target_os = "windows")]
-use std::time::Instant;
-
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
-use {
-    crate::notification::NotificationManager,
-    anyhow::Context as _,
-    dna_capture::Capture,
-    dna_detector::config::DetectionConfig,
-    dna_detector::detector::Detector,
-    dna_detector::detector::dialog::DialogDetector,
-    dna_detector::detector::round::RoundDetector,
-    dna_detector::detector::skill::SkillDetector,
-    dna_detector::event::DetectionEvent,
-    dna_detector::state::DebouncedDetector,
-    dna_detector::titlebar::crop_titlebar,
-    tracing::{debug, error, info, instrument, trace, warn},
-};
+use anyhow::{Context as _, Result};
+#[cfg(target_os = "windows")]
+use dna_capture::Capture;
+#[cfg(target_os = "windows")]
+use dna_detector::config::DetectionConfig;
+#[cfg(target_os = "windows")]
+use dna_detector::detector::Detector;
+#[cfg(target_os = "windows")]
+use dna_detector::detector::dialog::DialogDetector;
+#[cfg(target_os = "windows")]
+use dna_detector::detector::round::RoundDetector;
+#[cfg(target_os = "windows")]
+use dna_detector::detector::skill::SkillDetector;
+#[cfg(target_os = "windows")]
+use dna_detector::event::DetectionEvent;
+#[cfg(target_os = "windows")]
+use dna_detector::state::DebouncedDetector;
+#[cfg(target_os = "windows")]
+use dna_detector::titlebar::crop_titlebar;
+#[cfg(target_os = "windows")]
+use serde::{Deserialize, Serialize};
+#[cfg(target_os = "windows")]
+use tauri::{AppHandle, Emitter};
+#[cfg(target_os = "windows")]
+use tracing::{debug, error, info, instrument, trace, warn};
 
+#[cfg(target_os = "windows")]
+use crate::notification::NotificationManager;
+
+#[cfg(target_os = "windows")]
 /// Monitor loop configuration.
 ///
 /// Capture/detection timing fields are serialized as **milliseconds** (u64).
@@ -78,6 +107,7 @@ pub struct MonitorConfig {
     pub notify_ally_hp_sustain: Duration,
 }
 
+#[cfg(target_os = "windows")]
 impl Default for MonitorConfig {
     fn default() -> Self {
         Self {
@@ -97,6 +127,7 @@ impl Default for MonitorConfig {
     }
 }
 
+#[cfg(target_os = "windows")]
 /// Serialize/deserialize `Duration` as milliseconds (u64).
 mod serde_duration_ms {
     use std::time::Duration;
@@ -119,6 +150,7 @@ mod serde_duration_ms {
     }
 }
 
+#[cfg(target_os = "windows")]
 /// Serialize/deserialize `Duration` as seconds (f64).
 mod serde_duration_secs {
     use std::time::Duration;
@@ -150,6 +182,7 @@ mod serde_duration_secs {
 const SLEEP_GRANULARITY: Duration = Duration::from_millis(200);
 
 /// Current monitoring state.
+#[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MonitoringState {
@@ -162,6 +195,7 @@ pub enum MonitoringState {
 }
 
 /// Status snapshot for IPC queries.
+#[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Serialize)]
 pub struct MonitorStatus {
     /// Current state.
@@ -178,6 +212,7 @@ pub struct MonitorStatus {
     pub fps: f64,
 }
 
+#[cfg(target_os = "windows")]
 impl Default for MonitorStatus {
     fn default() -> Self {
         Self {
@@ -192,6 +227,7 @@ impl Default for MonitorStatus {
 }
 
 /// Serializable detection event for the frontend.
+#[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Serialize)]
 pub struct DetectionEventPayload {
     /// Event kind (e.g., "`SkillGreyed`", "`RoundVisible`").
@@ -805,71 +841,3 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 pub use platform::{CaptureInfo, MonitorState, start, stop};
-
-#[cfg(not(target_os = "windows"))]
-/// Capture metadata stub for non-Windows platforms.
-#[derive(Debug, Clone, Default, Serialize)]
-pub struct CaptureInfo {
-    /// Target window title.
-    pub window_name: String,
-    /// Frame width.
-    pub width: u32,
-    /// Frame height.
-    pub height: u32,
-    /// Active capture backend name.
-    pub backend: String,
-}
-
-#[cfg(not(target_os = "windows"))]
-/// Latest frame stub for non-Windows platforms.
-#[derive(Debug, Default)]
-pub struct LatestFrame {
-    /// No image on non-Windows.
-    pub image: Option<Arc<image::RgbaImage>>,
-    /// Capture metadata.
-    pub info: CaptureInfo,
-}
-
-#[cfg(not(target_os = "windows"))]
-/// Monitor state stub for non-Windows platforms.
-pub struct MonitorState {
-    /// Monitor status.
-    pub status: Arc<Mutex<MonitorStatus>>,
-    /// Latest frame.
-    pub latest_frame: Arc<Mutex<LatestFrame>>,
-    /// Configuration.
-    pub config: Arc<Mutex<MonitorConfig>>,
-}
-
-#[cfg(not(target_os = "windows"))]
-impl MonitorState {
-    /// Create a new idle monitor state.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            status: Arc::new(Mutex::new(MonitorStatus::default())),
-            latest_frame: Arc::new(Mutex::new(LatestFrame::default())),
-            config: Arc::new(Mutex::new(MonitorConfig::default())),
-        }
-    }
-
-    /// Load config stub.
-    pub fn load_config(&self, _app_handle: &AppHandle) {}
-}
-
-#[cfg(not(target_os = "windows"))]
-impl std::fmt::Debug for MonitorState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MonitorState").finish_non_exhaustive()
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-/// Start stub for non-Windows platforms.
-pub fn start(_app_handle: AppHandle, _state: &MonitorState) -> Result<()> {
-    anyhow::bail!("monitoring is only supported on Windows")
-}
-
-#[cfg(not(target_os = "windows"))]
-/// Stop stub for non-Windows platforms.
-pub fn stop(_app_handle: &AppHandle, _state: &MonitorState) {}

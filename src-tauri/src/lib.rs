@@ -1,14 +1,16 @@
 //! Tauri v2 application setup and IPC command registration.
 
+#[cfg(target_os = "windows")]
 #[allow(clippy::unreachable)] // Tauri command macro generates unreachable in Result paths
 mod commands;
 mod monitor;
+#[cfg(target_os = "windows")]
 mod notification;
+#[cfg(target_os = "windows")]
 mod settings;
 mod telemetry;
 
 use monitor::MonitorState;
-use tauri::Manager;
 
 /// Greet command for initial connectivity verification.
 #[tauri::command]
@@ -23,17 +25,20 @@ fn greet(name: &str) -> String {
 /// Returns an error if the Tauri runtime fails to initialize.
 #[allow(clippy::missing_errors_doc, clippy::exit)]
 fn build() -> tauri::Result<tauri::App> {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
-        .manage(MonitorState::new())
-        .setup(|app| {
-            // Load persisted settings from disk
+        .manage(MonitorState::new());
+
+    #[cfg(target_os = "windows")]
+    {
+        use tauri::Manager;
+        builder = builder.setup(|app| {
             let state = app.state::<MonitorState>();
             state.load_config(app.handle());
             Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
+        });
+        builder = builder.invoke_handler(tauri::generate_handler![
             greet,
             commands::start_monitoring,
             commands::stop_monitoring,
@@ -42,8 +47,15 @@ fn build() -> tauri::Result<tauri::App> {
             commands::get_settings,
             commands::get_default_settings,
             commands::save_settings,
-        ])
-        .build(tauri::generate_context!())
+        ]);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        builder = builder.invoke_handler(tauri::generate_handler![greet,]);
+    }
+
+    builder.build(tauri::generate_context!())
 }
 
 /// Run the Tauri application.
