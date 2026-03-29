@@ -7,7 +7,7 @@
 use std::time::Instant;
 
 use image::RgbaImage;
-use tracing::instrument;
+use tracing::{Span, instrument};
 
 use crate::config::SkillDetectorConfig;
 use crate::event::DetectionEvent;
@@ -73,7 +73,11 @@ impl SkillDetector {
 }
 
 impl Detector for SkillDetector {
-    #[instrument(skip_all, name = "skill_detect")]
+    #[instrument(
+        skip_all,
+        name = "skill_detect",
+        fields(skill.bright_ratio, skill.max_brightness, skill.is_greyed)
+    )]
     fn analyze(&self, frame: &RgbaImage) -> Vec<DetectionEvent> {
         let Some(roi_image) = self.config.roi.crop(frame) else {
             return Vec::new();
@@ -84,6 +88,11 @@ impl Detector for SkillDetector {
 
         let is_greyed = max_brightness < self.config.greyed_max_brightness
             && icon_bright_ratio < self.config.icon_bright_threshold;
+
+        let span = Span::current();
+        span.record("skill.bright_ratio", icon_bright_ratio);
+        span.record("skill.max_brightness", i64::from(max_brightness));
+        span.record("skill.is_greyed", is_greyed);
 
         if is_greyed {
             vec![DetectionEvent::SkillGreyed {

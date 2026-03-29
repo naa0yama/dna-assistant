@@ -11,7 +11,7 @@
 use std::time::Instant;
 
 use image::RgbaImage;
-use tracing::instrument;
+use tracing::{Span, instrument};
 
 use crate::color::text_pixel_ratio;
 use crate::config::DialogDetectorConfig;
@@ -75,7 +75,11 @@ impl DialogDetector {
 }
 
 impl Detector for DialogDetector {
-    #[instrument(skip_all, name = "dialog_detect")]
+    #[instrument(
+        skip_all,
+        name = "dialog_detect",
+        fields(dialog.bg_dark_ratio, dialog.text_ratio, dialog.is_visible)
+    )]
     fn analyze(&self, frame: &RgbaImage) -> Vec<DetectionEvent> {
         // Check bg ROI first: cheaper (brightness-only) and more selective
         // (threshold 0.85), allowing early rejection of gameplay frames.
@@ -96,6 +100,11 @@ impl Detector for DialogDetector {
         let now = Instant::now();
         let is_dialog = text_ratio >= self.config.text_presence_threshold
             && bg_dark_ratio >= self.config.bg_dark_threshold;
+
+        let span = Span::current();
+        span.record("dialog.bg_dark_ratio", bg_dark_ratio);
+        span.record("dialog.text_ratio", text_ratio);
+        span.record("dialog.is_visible", is_dialog);
 
         if is_dialog {
             vec![DetectionEvent::DialogVisible {

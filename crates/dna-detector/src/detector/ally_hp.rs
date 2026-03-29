@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use image::RgbaImage;
-use tracing::instrument;
+use tracing::{Span, instrument};
 
 use crate::color::pixel_matches_hsv_range;
 use crate::config::AllyHpDetectorConfig;
@@ -47,13 +47,25 @@ impl AllyHpDetector {
 }
 
 impl Detector for AllyHpDetector {
-    #[instrument(skip_all, name = "ally_hp_detect", fields(ally_index = self.ally_index))]
+    #[instrument(
+        skip_all,
+        name = "ally_hp_detect",
+        fields(
+            ally_hp.ally_index = self.ally_index,
+            ally_hp.hp_ratio,
+            ally_hp.is_low,
+        )
+    )]
     fn analyze(&self, frame: &RgbaImage) -> Vec<DetectionEvent> {
         let Some(roi_image) = self.config.roi.crop(frame) else {
             return Vec::new();
         };
         let ratio = self.hp_ratio(&roi_image);
         let now = Instant::now();
+
+        let span = Span::current();
+        span.record("ally_hp.hp_ratio", ratio);
+        span.record("ally_hp.is_low", ratio < self.config.down_threshold);
 
         if ratio < self.config.down_threshold {
             vec![DetectionEvent::AllyHpLow {

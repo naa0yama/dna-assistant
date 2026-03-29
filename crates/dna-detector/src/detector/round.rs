@@ -7,7 +7,7 @@
 use std::time::Instant;
 
 use image::RgbaImage;
-use tracing::instrument;
+use tracing::{Span, instrument};
 
 use crate::color::text_pixel_ratio;
 use crate::config::RoundDetectorConfig;
@@ -78,15 +78,24 @@ impl RoundDetector {
 }
 
 impl Detector for RoundDetector {
-    #[instrument(skip_all, name = "round_detect")]
+    #[instrument(
+        skip_all,
+        name = "round_detect",
+        fields(round.text_ratio, round.has_bright_left, round.is_visible)
+    )]
     fn analyze(&self, frame: &RgbaImage) -> Vec<DetectionEvent> {
         let Some(roi_image) = self.config.roi.crop(frame) else {
             return Vec::new();
         };
         let ratio = self.text_ratio(&roi_image);
-        let has_text =
-            ratio >= self.config.text_presence_threshold && self.has_bright_text_left(&roi_image);
+        let has_bright_left = self.has_bright_text_left(&roi_image);
+        let has_text = ratio >= self.config.text_presence_threshold && has_bright_left;
         let now = Instant::now();
+
+        let span = Span::current();
+        span.record("round.text_ratio", ratio);
+        span.record("round.has_bright_left", has_bright_left);
+        span.record("round.is_visible", has_text);
 
         if has_text {
             vec![DetectionEvent::RoundVisible {
