@@ -39,6 +39,19 @@ cd dna-assistant
 
 VS Code のコマンドパレット (`Ctrl+Shift+P`) から「Dev Containers: Reopen in Container」を選択してください。
 
+### Tauri v2 の build 環境
+
+```powershell
+# Step 1: MSVC Build Tools(C++ ワークロード付き)
+winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+
+# Step 2: Rust ツールチェーン
+mise install
+
+# Step 3: WebView2(Windows 10 1803+ / Windows 11 ではスキップ可)
+winget install --id Microsoft.EdgeWebView2Runtime
+```
+
 ## 使い方
 
 すべてのタスクは `mise run <task>` で実行します。
