@@ -58,4 +58,22 @@ pub enum DetectionEvent {
         /// When this was detected.
         timestamp: Instant,
     },
+    /// A dialog box (e.g., network error "Tips") is visible on screen.
+    DialogVisible {
+        /// Low-chroma text pixel ratio in the text ROI.
+        text_ratio: f64,
+        /// Dark pixel ratio in the background ROI.
+        bg_dark_ratio: f64,
+        /// When this was detected.
+        timestamp: Instant,
+    },
+    /// No dialog box detected.
+    DialogGone {
+        /// Low-chroma text pixel ratio in the text ROI.
+        text_ratio: f64,
+        /// Dark pixel ratio in the background ROI.
+        bg_dark_ratio: f64,
+        /// When this was detected.
+        timestamp: Instant,
+    },
 }

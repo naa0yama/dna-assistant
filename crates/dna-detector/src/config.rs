@@ -15,6 +15,8 @@ pub struct DetectionConfig {
     pub ally_hp: AllyHpDetectorConfig,
     /// Round detector settings.
     pub round: RoundDetectorConfig,
+    /// Dialog detector settings.
+    pub dialog: DialogDetectorConfig,
 }
 
 /// Configuration for the skill (Q) SP depletion detector.
@@ -46,6 +48,30 @@ pub struct AllyHpDetectorConfig {
     pub hp_color_range: HsvRange,
     /// HP ratio below which an ally is considered "down" (e.g., 0.05).
     pub down_threshold: f64,
+}
+
+/// Configuration for the dialog detector.
+///
+/// Detects centered dialog boxes (e.g., "Tips" network error) by combining
+/// two criteria: high-density low-chroma text in a text ROI and a dark
+/// background in a surrounding background ROI.
+#[allow(clippy::module_name_repetitions)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DialogDetectorConfig {
+    /// ROI for the error message text band (center of dialog).
+    pub text_roi: RoiDefinition,
+    /// ROI for the dialog dark background area.
+    pub bg_roi: RoiDefinition,
+    /// Minimum low-chroma text pixel ratio to detect dialog (e.g., 0.10).
+    pub text_presence_threshold: f64,
+    /// Minimum dark pixel ratio in background ROI (e.g., 0.85).
+    pub bg_dark_threshold: f64,
+    /// Minimum average brightness for a pixel to be a text candidate.
+    pub brightness_min: u8,
+    /// Maximum chroma (max(R,G,B) - min(R,G,B)) for text pixels.
+    pub max_chroma: u8,
+    /// Maximum average brightness for a background pixel to count as dark.
+    pub bg_brightness_max: u8,
 }
 
 /// Configuration for the round completion detector.
@@ -112,6 +138,25 @@ impl Default for DetectionConfig {
                 max_chroma: 60,
                 text_left_brightness_min: 200,
             },
+            dialog: DialogDetectorConfig {
+                text_roi: RoiDefinition {
+                    x: 0.31,
+                    y: 0.45,
+                    width: 0.37,
+                    height: 0.03,
+                },
+                bg_roi: RoiDefinition {
+                    x: 0.25,
+                    y: 0.40,
+                    width: 0.50,
+                    height: 0.15,
+                },
+                text_presence_threshold: 0.10,
+                bg_dark_threshold: 0.85,
+                brightness_min: 100,
+                max_chroma: 60,
+                bg_brightness_max: 25,
+            },
         }
     }
 }
@@ -136,9 +181,19 @@ mod tests {
         assert!(config.ally_hp.roi.x + config.ally_hp.roi.width <= 1.0);
         assert!(config.ally_hp.roi.y + config.ally_hp.roi.height <= 1.0);
 
+        // Dialog text ROI is within bounds
+        assert!(config.dialog.text_roi.x + config.dialog.text_roi.width <= 1.0);
+        assert!(config.dialog.text_roi.y + config.dialog.text_roi.height <= 1.0);
+
+        // Dialog bg ROI is within bounds
+        assert!(config.dialog.bg_roi.x + config.dialog.bg_roi.width <= 1.0);
+        assert!(config.dialog.bg_roi.y + config.dialog.bg_roi.height <= 1.0);
+
         // Thresholds are positive
         assert!(config.skill.icon_bright_threshold > 0.0);
         assert!(config.round.text_presence_threshold > 0.0);
         assert!(config.ally_hp.down_threshold > 0.0);
+        assert!(config.dialog.text_presence_threshold > 0.0);
+        assert!(config.dialog.bg_dark_threshold > 0.0);
     }
 }

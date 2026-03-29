@@ -69,6 +69,40 @@ pub fn pixel_matches_hsv_range(pixel: &[u8; 4], range: &HsvRange) -> bool {
         && (range.v_min..=range.v_max).contains(&hsv.v)
 }
 
+/// Compute the ratio of low-chroma bright pixels (text-like) in an image.
+///
+/// A pixel is text-like when:
+/// - average brightness (R+G+B)/3 >= `brightness_min`
+/// - chroma max(R,G,B) - min(R,G,B) < `max_chroma`
+#[must_use]
+pub fn text_pixel_ratio(image: &image::RgbaImage, brightness_min: u8, max_chroma: u8) -> f64 {
+    let total = image.width().saturating_mul(image.height());
+    if total == 0 {
+        return 0.0;
+    }
+
+    let bright_min = u16::from(brightness_min);
+    let chroma_max = u16::from(max_chroma);
+
+    let text_count = image
+        .pixels()
+        .filter(|p| {
+            let r = u16::from(p.0[0]);
+            let g = u16::from(p.0[1]);
+            let b = u16::from(p.0[2]);
+            let avg = (r.saturating_add(g).saturating_add(b)) / 3;
+            let max_c = r.max(g).max(b);
+            let min_c = r.min(g).min(b);
+            let chroma = max_c.saturating_sub(min_c);
+            avg >= bright_min && chroma < chroma_max
+        })
+        .count();
+
+    #[allow(clippy::cast_precision_loss, clippy::as_conversions)]
+    let ratio = text_count as f64 / f64::from(total);
+    ratio
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

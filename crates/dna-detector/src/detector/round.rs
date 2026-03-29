@@ -9,6 +9,7 @@ use std::time::Instant;
 use image::RgbaImage;
 use tracing::instrument;
 
+use crate::color::text_pixel_ratio;
 use crate::config::RoundDetectorConfig;
 use crate::event::DetectionEvent;
 
@@ -34,36 +35,14 @@ impl RoundDetector {
 
     /// Compute the ratio of text-like pixels in a cropped ROI image.
     ///
-    /// A pixel is considered text-like when:
-    /// - average brightness (R+G+B)/3 >= `brightness_min`
-    /// - chroma max(R,G,B) - min(R,G,B) < `max_chroma`
+    /// Delegates to [`text_pixel_ratio`] with this detector's thresholds.
     #[must_use]
     pub fn text_ratio(&self, roi_image: &RgbaImage) -> f64 {
-        let total = roi_image.width().saturating_mul(roi_image.height());
-        if total == 0 {
-            return 0.0;
-        }
-
-        let bright_min = u16::from(self.config.brightness_min);
-        let chroma_max = u16::from(self.config.max_chroma);
-
-        let text_count = roi_image
-            .pixels()
-            .filter(|p| {
-                let r = u16::from(p.0[0]);
-                let g = u16::from(p.0[1]);
-                let b = u16::from(p.0[2]);
-                let avg = (r.saturating_add(g).saturating_add(b)) / 3;
-                let max_c = r.max(g).max(b);
-                let min_c = r.min(g).min(b);
-                let chroma = max_c.saturating_sub(min_c);
-                avg >= bright_min && chroma < chroma_max
-            })
-            .count();
-
-        #[allow(clippy::cast_precision_loss, clippy::as_conversions)]
-        let ratio = text_count as f64 / f64::from(total);
-        ratio
+        text_pixel_ratio(
+            roi_image,
+            self.config.brightness_min,
+            self.config.max_chroma,
+        )
     }
 
     /// Check if the left portion of the ROI contains bright white text.
