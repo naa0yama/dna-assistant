@@ -270,7 +270,7 @@ function populateSettings(config) {
 
 // Fields serialized as ms (integer) vs sec (float)
 const MS_KEYS = new Set([
-  "capture_interval", "window_search_interval", "preview_interval", "skill_debounce",
+  "capture_interval", "window_search_interval", "preview_interval",
 ]);
 
 function collectSettings() {

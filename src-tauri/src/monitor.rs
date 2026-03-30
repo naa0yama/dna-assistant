@@ -49,8 +49,6 @@ use dna_detector::detector::skill::SkillDetector;
 #[cfg(target_os = "windows")]
 use dna_detector::event::DetectionEvent;
 #[cfg(target_os = "windows")]
-use dna_detector::state::DebouncedDetector;
-#[cfg(target_os = "windows")]
 use dna_detector::titlebar::crop_titlebar;
 #[cfg(target_os = "windows")]
 use serde::{Deserialize, Serialize};
@@ -80,9 +78,6 @@ pub struct MonitorConfig {
     /// Detection page preview refresh interval (ms).
     #[serde(with = "serde_duration_ms")]
     pub preview_interval: Duration,
-    /// Debounce cooldown for skill detector (ms).
-    #[serde(with = "serde_duration_ms")]
-    pub skill_debounce: Duration,
     /// Duration to suppress Skill events after `RoundGone` (sec).
     #[serde(with = "serde_duration_secs")]
     pub round_transition_suppress: Duration,
@@ -115,7 +110,6 @@ impl Default for MonitorConfig {
             window_search_interval: Duration::from_millis(3000),
             max_capture_retries: 3,
             preview_interval: Duration::from_millis(3000),
-            skill_debounce: Duration::from_millis(2500),
             round_transition_suppress: Duration::from_secs(15),
             notification_cooldown: Duration::from_secs(60),
             notify_skill_sustain: Duration::from_secs(5),
@@ -252,6 +246,7 @@ mod platform {
         Round,
         Dialog,
         AllyHp,
+        ResultScreen,
     }
 
     /// Tracks last-seen event kind per detector category, forwarding only transitions.
@@ -261,7 +256,7 @@ mod platform {
     #[derive(Debug)]
     struct TransitionFilter {
         /// Maps each category to the last-seen event kind name.
-        state: [Option<&'static str>; 4],
+        state: [Option<&'static str>; 5],
         /// When `RoundGone` was last seen (for skill suppression).
         round_gone_at: Option<Instant>,
         /// Duration to suppress skill events after round transition.
@@ -271,7 +266,7 @@ mod platform {
     impl TransitionFilter {
         const fn new(round_transition_suppress: Duration) -> Self {
             Self {
-                state: [None; 4],
+                state: [None; 5],
                 round_gone_at: None,
                 round_transition_suppress,
             }
@@ -292,7 +287,10 @@ mod platform {
             // Suppress Skill flapping during round transition
             if matches!(
                 event,
-                DetectionEvent::SkillGreyed { .. } | DetectionEvent::SkillReady { .. }
+                DetectionEvent::SkillGreyed { .. }
+                    | DetectionEvent::SkillReady { .. }
+                    | DetectionEvent::SkillActive { .. }
+                    | DetectionEvent::SkillOff { .. }
             ) && self
                 .round_gone_at
                 .is_some_and(|t| now.duration_since(t) < self.round_transition_suppress)
@@ -311,14 +309,25 @@ mod platform {
             *slot = Some(kind);
             true
         }
+
+        /// Check if any event in the list would be a transition (without consuming).
+        fn has_pending_transition(&self, events: &[DetectionEvent]) -> bool {
+            events.iter().any(|e| {
+                #[allow(clippy::as_conversions)]
+                let idx = categorize(e) as usize;
+                let kind = event_kind_name(e);
+                self.state.get(idx).copied().flatten() != Some(kind)
+            })
+        }
     }
 
     /// Map a detection event to its detector category.
     const fn categorize(event: &DetectionEvent) -> DetectorCategory {
         match event {
-            DetectionEvent::SkillReady { .. } | DetectionEvent::SkillGreyed { .. } => {
-                DetectorCategory::Skill
-            }
+            DetectionEvent::SkillReady { .. }
+            | DetectionEvent::SkillActive { .. }
+            | DetectionEvent::SkillOff { .. }
+            | DetectionEvent::SkillGreyed { .. } => DetectorCategory::Skill,
             DetectionEvent::RoundVisible { .. } | DetectionEvent::RoundGone { .. } => {
                 DetectorCategory::Round
             }
@@ -328,6 +337,8 @@ mod platform {
             DetectionEvent::AllyHpLow { .. } | DetectionEvent::AllyHpNormal { .. } => {
                 DetectorCategory::AllyHp
             }
+            DetectionEvent::ResultScreenVisible { .. }
+            | DetectionEvent::ResultScreenGone { .. } => DetectorCategory::ResultScreen,
         }
     }
 
@@ -482,16 +493,25 @@ mod platform {
         let mut transition_filter = TransitionFilter::new(monitor_config.round_transition_suppress);
 
         // Build detectors.
-        // SkillDetector uses DebouncedDetector to suppress cut-in animation false positives.
-        // RoundDetector and DialogDetector call analyze() directly — TransitionFilter
-        // handles state-change filtering for the UI.
-        // AllyHpDetector is excluded (unverified placeholder config, always fires AllyHpLow).
-        let mut skill_detector = DebouncedDetector::new(
-            SkillDetector::new(det_config.skill),
-            monitor_config.skill_debounce,
-        );
+        // All detectors call analyze() directly. TransitionFilter handles
+        // state-change deduplication, and round_transition_suppress handles
+        // skill flapping during screen transitions.
+        // AllyHpDetector is excluded (unverified placeholder config).
+        let skill_detector = SkillDetector::new(det_config.skill);
         let round_detector = RoundDetector::new(det_config.round);
         let dialog_detector = DialogDetector::new(det_config.dialog);
+
+        // Initialize OCR engine (optional — gracefully degrades if unavailable)
+        let ocr_engine = match dna_capture::ocr::JapaneseOcrEngine::new() {
+            Ok(engine) => {
+                info!("Windows OCR engine initialized (Japanese)");
+                Some(engine)
+            }
+            Err(e) => {
+                warn!(%e, "OCR unavailable — falling back to pixel-only detection");
+                None
+            }
+        };
 
         loop {
             if stop_flag.load(Ordering::Relaxed) {
@@ -582,11 +602,20 @@ mod platform {
                 // Crop titlebar
                 let game_frame = crop_titlebar(&frame);
 
-                // Run detectors
+                // Run pixel detectors
                 let mut raw_events: Vec<DetectionEvent> = Vec::new();
-                raw_events.extend(skill_detector.process(&game_frame));
+                raw_events.extend(skill_detector.analyze(&game_frame));
                 raw_events.extend(round_detector.analyze(&game_frame));
                 raw_events.extend(dialog_detector.analyze(&game_frame));
+
+                // OCR-assisted detection (Phase 2)
+                // Only run OCR when pixel detector state changes (transition)
+                // to avoid expensive OCR calls every frame.
+                if let Some(ref ocr_engine) = ocr_engine
+                    && transition_filter.has_pending_transition(&raw_events)
+                {
+                    run_ocr(ocr_engine, &game_frame, &mut raw_events);
+                }
 
                 // Notification uses raw events (needs sustained-condition tracking)
                 if !raw_events.is_empty() {
@@ -676,11 +705,15 @@ mod platform {
     const fn event_kind_name(event: &DetectionEvent) -> &'static str {
         match event {
             DetectionEvent::SkillReady { .. } => "SkillReady",
+            DetectionEvent::SkillActive { .. } => "SkillActive",
+            DetectionEvent::SkillOff { .. } => "SkillOff",
             DetectionEvent::SkillGreyed { .. } => "SkillGreyed",
             DetectionEvent::AllyHpLow { .. } => "AllyHpLow",
             DetectionEvent::AllyHpNormal { .. } => "AllyHpNormal",
             DetectionEvent::RoundVisible { .. } => "RoundVisible",
             DetectionEvent::RoundGone { .. } => "RoundGone",
+            DetectionEvent::ResultScreenVisible { .. } => "ResultScreenVisible",
+            DetectionEvent::ResultScreenGone { .. } => "ResultScreenGone",
             DetectionEvent::DialogVisible { .. } => "DialogVisible",
             DetectionEvent::DialogGone { .. } => "DialogGone",
         }
@@ -705,6 +738,12 @@ mod platform {
     fn event_description(event: &DetectionEvent) -> String {
         match event {
             DetectionEvent::SkillReady { .. } => String::from("Q スキル使用可能"),
+            DetectionEvent::SkillActive { sp_cost, .. } => {
+                format!("Q スキル発動中 (SP:{sp_cost})")
+            }
+            DetectionEvent::SkillOff { sp_cost, .. } => {
+                format!("Q スキル未発動 (SP:{sp_cost})")
+            }
             DetectionEvent::SkillGreyed { .. } => String::from("Q スキル SP 枯渇"),
             DetectionEvent::AllyHpLow { ally_index, .. } => {
                 format!("味方 {ally_index} HP 低下")
@@ -712,11 +751,257 @@ mod platform {
             DetectionEvent::AllyHpNormal { ally_index, .. } => {
                 format!("味方 {ally_index} HP 回復")
             }
+            DetectionEvent::RoundVisible {
+                round_number: Some(n),
+                ..
+            } => {
+                format!("ラウンド {n} 進行中")
+            }
             DetectionEvent::RoundVisible { .. } => String::from("ラウンド進行中"),
             DetectionEvent::RoundGone { .. } => String::from("ラウンド完了"),
+            DetectionEvent::ResultScreenVisible { .. } => String::from("依頼完了 (リザルト)"),
+            DetectionEvent::ResultScreenGone { .. } => String::from("リザルト終了"),
             DetectionEvent::DialogVisible { .. } => String::from("ダイアログ表示"),
             DetectionEvent::DialogGone { .. } => String::from("ダイアログ消失"),
         }
+    }
+
+    /// Run OCR conditionally based on pixel detector results.
+    ///
+    /// - When `RoundVisible`: OCR the round text ROI to extract round number.
+    /// - When `RoundGone`: OCR the result text area for "依頼完了" confirmation.
+    /// - When `SkillReady`: OCR the skill area for SP cost to determine ON ("0") vs OFF.
+    /// - When `DialogVisible`: OCR the dialog area for "Tips" title confirmation.
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    fn run_ocr(
+        ocr_engine: &dna_capture::ocr::JapaneseOcrEngine,
+        game_frame: &image::RgbaImage,
+        raw_events: &mut Vec<DetectionEvent>,
+    ) {
+        let has_skill_ready = raw_events
+            .iter()
+            .any(|e| matches!(e, DetectionEvent::SkillReady { .. }));
+        let has_round_visible = raw_events
+            .iter()
+            .any(|e| matches!(e, DetectionEvent::RoundVisible { .. }));
+        let has_round_gone = raw_events
+            .iter()
+            .any(|e| matches!(e, DetectionEvent::RoundGone { .. }));
+        let has_dialog_visible = raw_events
+            .iter()
+            .any(|e| matches!(e, DetectionEvent::DialogVisible { .. }));
+
+        // Enrich RoundVisible with OCR round number
+        // Use an enlarged ROI (wider + taller than pixel detector ROI)
+        // so Windows OCR has enough text height to recognize characters.
+        let ocr_round_roi = dna_detector::roi::RoiDefinition {
+            x: 0.0,
+            y: 0.22,
+            width: 0.30,
+            height: 0.10,
+        };
+        if has_round_visible && let Some(ocr_image) = ocr_round_roi.crop(game_frame) {
+            match ocr_engine.recognize_text(&ocr_image) {
+                Ok(text) => {
+                    let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+                    let has_round_text = normalized.contains("ラウンド");
+                    let round_num = parse_round_number(&text);
+                    debug!(
+                        round_number = ?round_num,
+                        has_round_text,
+                        ocr_text = %text,
+                        "round OCR result"
+                    );
+
+                    if has_round_text {
+                        // Enrich RoundVisible with confirmed round number
+                        for event in raw_events.iter_mut() {
+                            if let DetectionEvent::RoundVisible { round_number, .. } = event {
+                                *round_number = round_num;
+                            }
+                        }
+                    } else {
+                        // OCR says no round text — pixel detection was a false positive.
+                        // Replace RoundVisible with RoundGone.
+                        for event in raw_events.iter_mut() {
+                            if let DetectionEvent::RoundVisible {
+                                white_ratio,
+                                timestamp,
+                                ..
+                            } = event
+                            {
+                                debug!("OCR overriding false RoundVisible → RoundGone");
+                                *event = DetectionEvent::RoundGone {
+                                    white_ratio: *white_ratio,
+                                    timestamp: *timestamp,
+                                };
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!(%e, "round text OCR failed — keeping pixel result");
+                }
+            }
+        }
+
+        // Check for result screen when round text disappears
+        // "依頼完了" appears in the bottom-left area of the result screen
+        let ocr_result_roi = dna_detector::roi::RoiDefinition {
+            x: 0.0,
+            y: 0.75,
+            width: 0.35,
+            height: 0.20,
+        };
+        if has_round_gone && let Some(ocr_image) = ocr_result_roi.crop(game_frame) {
+            match ocr_engine.recognize_text(&ocr_image) {
+                Ok(text) => {
+                    debug!(ocr_text = %text, "result screen OCR result");
+                    if text.contains("依頼完了") {
+                        info!(ocr_text = %text, "result screen detected via OCR");
+                        raw_events.push(DetectionEvent::ResultScreenVisible {
+                            text,
+                            timestamp: Instant::now(),
+                        });
+                    }
+                }
+                Err(e) => {
+                    debug!(%e, "result screen OCR failed");
+                }
+            }
+        }
+
+        // Skill ON/OFF via OCR: read SP cost number near the skill icon.
+        // "0" = active (ON), any other number = inactive (OFF).
+        // "Q" label and "強化" text are excluded from matching (gamepad hides Q).
+        if has_skill_ready {
+            let ocr_skill_roi = dna_detector::roi::RoiDefinition {
+                x: 0.85,
+                y: 0.86,
+                width: 0.10,
+                height: 0.10,
+            };
+            if let Some(roi_image) = ocr_skill_roi.crop(game_frame) {
+                match ocr_engine.recognize_text(&roi_image) {
+                    Ok(text) => {
+                        // Parse SP cost: remove "Q" (key binding) and "強化" (label),
+                        // extract remaining digits. "0" = active, non-zero = off.
+                        let sp_cost = parse_sp_cost(&text);
+                        debug!(sp_cost = ?sp_cost, ocr_text = %text, "skill OCR result");
+                        if let Some(cost) = sp_cost {
+                            let now = Instant::now();
+                            if cost == "0" {
+                                raw_events.push(DetectionEvent::SkillActive {
+                                    sp_cost: cost,
+                                    timestamp: now,
+                                });
+                            } else {
+                                raw_events.push(DetectionEvent::SkillOff {
+                                    sp_cost: cost,
+                                    timestamp: now,
+                                });
+                            }
+                        }
+                        // sp_cost=None: OCR couldn't read SP number — skip
+                    }
+                    Err(e) => {
+                        debug!(%e, "skill OCR failed");
+                    }
+                }
+            }
+        }
+
+        // Gate DialogVisible via OCR: confirm "Tips" title is present.
+        // Dark camera angles trigger false DialogVisible from pixel detection.
+        // Dialog ROI covers the center area where "Tips" title appears
+        let ocr_dialog_roi = dna_detector::roi::RoiDefinition {
+            x: 0.25,
+            y: 0.35,
+            width: 0.50,
+            height: 0.20,
+        };
+        if has_dialog_visible && let Some(ocr_image) = ocr_dialog_roi.crop(game_frame) {
+            match ocr_engine.recognize_text(&ocr_image) {
+                Ok(text) => {
+                    let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+                    let has_tips = normalized.contains("Tips") || normalized.contains("tips");
+                    debug!(has_tips, ocr_text = %text, "dialog OCR result");
+
+                    if !has_tips {
+                        // OCR says no "Tips" — pixel detection was a false positive.
+                        for event in raw_events.iter_mut() {
+                            if let DetectionEvent::DialogVisible {
+                                text_ratio,
+                                bg_dark_ratio,
+                                timestamp,
+                                ..
+                            } = event
+                            {
+                                debug!("OCR overriding false DialogVisible → DialogGone");
+                                *event = DetectionEvent::DialogGone {
+                                    text_ratio: *text_ratio,
+                                    bg_dark_ratio: *bg_dark_ratio,
+                                    timestamp: *timestamp,
+                                };
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!(%e, "dialog OCR failed — keeping pixel result");
+                }
+            }
+        }
+    }
+
+    /// Extract SP cost number from OCR text near the skill icon.
+    ///
+    /// Ignores "Q" (gamepad hides it) and "強化" (always present).
+    /// Returns the first numeric string found.
+    fn parse_sp_cost(text: &str) -> Option<String> {
+        let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+
+        // Remove known non-cost text
+        let cleaned = normalized.replace('Q', "").replace("強化", "");
+
+        // Find first digit sequence
+        let start = cleaned.find(|c: char| c.is_ascii_digit())?;
+        let digits: String = cleaned[start..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        if digits.is_empty() {
+            None
+        } else {
+            Some(digits)
+        }
+    }
+
+    /// Parse round number from OCR text.
+    ///
+    /// Windows OCR often inserts spaces between characters, so we normalize
+    /// by removing spaces before matching. Handles patterns like:
+    /// - "探 検 現 在 の ラ ウ ン ド 20"
+    /// - "探検 現在のラウンド：05"
+    fn parse_round_number(text: &str) -> Option<u32> {
+        // Remove spaces to normalize OCR output
+        let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+
+        // Look for digits after "ラウンド" marker
+        let after = normalized.split("ラウンド").nth(1)?;
+
+        // Skip optional colon/full-width colon
+        let after = after
+            .strip_prefix('：')
+            .or_else(|| after.strip_prefix(':'))
+            .unwrap_or(after);
+
+        // Extract only the first consecutive digit sequence
+        let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+        if digits.is_empty() {
+            return None;
+        }
+        digits.parse().ok()
     }
 
     /// Store the frame as `Arc` in shared state (zero-copy move, no clone).

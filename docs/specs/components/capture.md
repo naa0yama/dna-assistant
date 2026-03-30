@@ -186,6 +186,9 @@ pub mod printwindow;
 #[cfg(target_os = "windows")]
 pub mod window;
 
+#[cfg(target_os = "windows")]
+pub mod ocr;
+
 // Linux では空ライブラリとしてコンパイル
 ```
 
@@ -200,25 +203,26 @@ windows = { version = "0.62", features = ["Win32_UI_WindowsAndMessaging", "Win32
 
 ## 1.9 依存クレート
 
-| クレート          | バージョン | 用途                                     | プラットフォーム       |
-| ----------------- | ---------- | ---------------------------------------- | ---------------------- |
-| `windows-capture` | `1.5`      | WGC ラッパー(プライマリキャプチャ)       | Windows                |
-| `win-screenshot`  | `4.0`      | `PrintWindow` ラッパー(フォールバック)   | Windows                |
-| `windows`         | `0.62`     | Win32 API (HWND 取得、`EnumWindows` 等)  | Windows                |
-| `image`           | workspace  | `RgbaImage` — キャプチャ出力フォーマット | クロスプラットフォーム |
-| `anyhow`          | workspace  | エラーハンドリング                       | クロスプラットフォーム |
-| `tracing`         | workspace  | 構造化ログ                               | クロスプラットフォーム |
+| クレート          | バージョン | 用途                                                                      | プラットフォーム       |
+| ----------------- | ---------- | ------------------------------------------------------------------------- | ---------------------- |
+| `windows-capture` | `1.5`      | WGC ラッパー(プライマリキャプチャ)                                        | Windows                |
+| `win-screenshot`  | `4.0`      | `PrintWindow` ラッパー(フォールバック)                                    | Windows                |
+| `windows`         | `0.62`     | Win32 API (HWND 取得)、OCR (`Windows.Media.Ocr`、`Windows.Globalization`) | Windows                |
+| `image`           | workspace  | `RgbaImage` — キャプチャ出力フォーマット                                  | クロスプラットフォーム |
+| `anyhow`          | workspace  | エラーハンドリング                                                        | クロスプラットフォーム |
+| `tracing`         | workspace  | 構造化ログ                                                                | クロスプラットフォーム |
 
 > 3 クレートすべてが `windows` `0.62.x` に依存しており、ワークスペースで `"0.62"` に統一可能。
 > `windows-capture` `2.0.0-alpha` は大規模リライト中のため安定版 `1.5` を使用する。
 
 ## 1.10 モジュール構成
 
-| モジュール    | ファイル         | 責務                                                |
-| ------------- | ---------------- | --------------------------------------------------- |
-| `window`      | `window.rs`      | ウィンドウ列挙、タイトルマッチング、HWND 取得・管理 |
-| `wgc`         | `wgc.rs`         | WGC バックエンド実装、`GraphicsCaptureApiHandler`   |
-| `printwindow` | `printwindow.rs` | `PrintWindow` フォールバック実装                    |
+| モジュール    | ファイル         | 責務                                                       |
+| ------------- | ---------------- | ---------------------------------------------------------- |
+| `window`      | `window.rs`      | ウィンドウ列挙、タイトルマッチング、HWND 取得・管理        |
+| `wgc`         | `wgc.rs`         | WGC バックエンド実装、`GraphicsCaptureApiHandler`          |
+| `printwindow` | `printwindow.rs` | `PrintWindow` フォールバック実装                           |
+| `ocr`         | `ocr.rs`         | `JapaneseOcrEngine` — Windows OCR API (日本語テキスト認識) |
 
 全モジュールは `#[cfg(target_os = "windows")]` でゲーティングされる。
 
@@ -260,6 +264,32 @@ pub enum CaptureBackend {
     PrintWindow,
 }
 ```
+
+### OCR API
+
+```rust
+/// Windows OCR engine wrapper, pre-initialized with Japanese language.
+///
+/// Create once at monitor startup, reuse across frames.
+pub struct JapaneseOcrEngine { /* ... */ }
+
+impl JapaneseOcrEngine {
+    /// Create a new OCR engine for Japanese text recognition.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Japanese language pack is not installed
+    /// or the OCR engine cannot be created.
+    pub fn new() -> Result<Self>;
+
+    /// Run OCR on a cropped RGBA image region.
+    ///
+    /// Returns all recognized text as a single string.
+    pub fn recognize_text(&self, image: &RgbaImage) -> Result<String>;
+}
+```
+
+内部で RGBA → BGRA 変換を行い、`Windows.Media.Ocr.OcrEngine` へ渡す。OCR 用の ROI 切り出しは呼び出し元(`src-tauri` の `run_ocr()`)が `RoiDefinition::crop()` で行う。
 
 ### ウィンドウ検索 API
 
@@ -326,6 +356,7 @@ impl Capture for MockCapture {
 
 ## 1.13 検討事項
 
+- [x] Windows OCR API (`Windows.Media.Ocr`) の統合 — `JapaneseOcrEngine` 実装済み
 - [ ] `GetClientRect` によるクライアント領域のみのキャプチャ — タイトルバー除去が不要になるが、`crop_titlebar()` は `0` を返すため無害
 - [ ] WGC のフレームプール管理 — メモリ使用量の最適化(フレームバッファのサイズ制御)
 - [ ] キャプチャ間隔のアダプティブ調整 — 状態変化が激しい場合に間隔を短縮

@@ -19,6 +19,7 @@ enum TriggerKind {
     DialogVisible,
     RoundGone,
     AllyHpLow,
+    ResultScreen,
 }
 
 /// Configuration for a notification trigger.
@@ -59,6 +60,12 @@ const fn trigger_config(kind: TriggerKind, cfg: &MonitorConfig) -> TriggerConfig
             cooldown: cfg.notification_cooldown,
             title: "味方 HP 低下",
             body: "味方の HP が低下しています",
+        },
+        TriggerKind::ResultScreen => TriggerConfig {
+            sustain_duration: Duration::from_secs(0),
+            cooldown: cfg.notify_round_cooldown,
+            title: "依頼完了",
+            body: "ラウンドが完了しました (OCR 確認済み)",
         },
     }
 }
@@ -110,7 +117,9 @@ impl NotificationManager {
 
         for event in events {
             match event {
-                DetectionEvent::SkillReady { .. } => {
+                DetectionEvent::SkillReady { .. }
+                | DetectionEvent::SkillActive { .. }
+                | DetectionEvent::SkillOff { .. } => {
                     self.skill_was_ready = true;
                     self.clear_condition(TriggerKind::SkillGreyed);
                 }
@@ -145,6 +154,13 @@ impl NotificationManager {
                 }
                 DetectionEvent::AllyHpNormal { .. } => {
                     self.clear_condition(TriggerKind::AllyHpLow);
+                }
+                DetectionEvent::ResultScreenVisible { .. } => {
+                    // Definitive round completion via OCR
+                    self.track_condition(TriggerKind::ResultScreen, now);
+                }
+                DetectionEvent::ResultScreenGone { .. } => {
+                    self.clear_condition(TriggerKind::ResultScreen);
                 }
             }
         }

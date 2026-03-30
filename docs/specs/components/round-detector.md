@@ -29,12 +29,21 @@ Duet Night Abyss の探検モードでは、画面左上に "探検 現在のラ
 
 chroma フィルターが重要な役割を果たす。ラウンドテキストはニュートラルな白/灰色であるため低彩度だが、戦闘エフェクト(雷、炎)は高輝度であっても高彩度になる。この差異を利用して分離する。
 
+### 左端テキスト確認
+
+ROI 左端 1/4 領域の最大輝度を計測し、`text_left_brightness_min`(`200`)以上であることを追加条件とする。ラウンドテキスト "探検" は常に左端から白文字(輝度 `~255`)で始まるが、リザルト画面等の背景は左端が暗い(`~168` 以下)ため、この条件で分離できる。
+
 ### 判定閾値
 
-| 指標         | 閾値           | 意味                             |
-| ------------ | -------------- | -------------------------------- |
-| `text_ratio` | `>= 0.03` (3%) | テキスト表示あり(`RoundVisible`) |
-| `text_ratio` | `< 0.03` (3%)  | テキスト消失(`RoundGone`)        |
+3 条件の AND で `RoundVisible` を判定する:
+
+| 指標                        | 閾値                             | 意味                                 |
+| --------------------------- | -------------------------------- | ------------------------------------ |
+| `text_ratio`                | `>= 0.03` (3%)                   | テキストピクセル密度が十分           |
+| `has_bright_text_left`      | ROI 左端 1/4 の最大輝度 `>= 200` | 左端に白いテキスト("探検")が存在する |
+| 上記の AND 条件を満たさない | —                                | テキスト消失(`RoundGone`)            |
+
+`text_left_brightness_min` は、リザルト画面のような全体的に明るいが左端が暗い背景を排除するためのガード条件である。リザルト画面の左端最大輝度は `~168` であり、閾値 `200` で分離される。
 
 実測値: テキスト表示時は `text_ratio >= 4.5%`、消失時は `<= 1.1%`。 `3%` の閾値でクリーンに分離される。
 
@@ -60,8 +69,9 @@ flowchart TD
     CHECK_ROI -- No --> EMPTY["空の Vec を返す"]
     CHECK_ROI -- Yes --> CLASSIFY["ピクセル分類\n輝度 >= 140 AND chroma < 60"]
     CLASSIFY --> RATIO["text_ratio 算出\ntext_count / total_pixels"]
-    RATIO --> THRESHOLD{"text_ratio >= 0.03?"}
-    THRESHOLD -- Yes --> VISIBLE["RoundVisible イベント発行"]
+    RATIO --> LEFT_CHECK["左端 1/4 最大輝度チェック\nhas_bright_text_left()"]
+    LEFT_CHECK --> THRESHOLD{"text_ratio >= 0.03\nAND left_max >= 200?"}
+    THRESHOLD -- Yes --> VISIBLE["RoundVisible イベント発行\n(round_number: None)"]
     THRESHOLD -- No --> GONE["RoundGone イベント発行"]
 ```
 
@@ -112,6 +122,10 @@ pub struct RoundDetectorConfig {
     pub brightness_min: u8,
     /// Maximum chroma (max(R,G,B) - min(R,G,B)) to filter out colorful combat effects.
     pub max_chroma: u8,
+    /// Minimum max brightness in the left quarter of the ROI to confirm text presence.
+    /// Round text "探検" starts from the left with white characters (~255).
+    /// Result screen backgrounds never reach this brightness in the left area (~168 max).
+    pub text_left_brightness_min: u8,
 }
 ```
 
@@ -123,15 +137,16 @@ RoundDetectorConfig {
     text_presence_threshold: 0.03,
     brightness_min: 140,
     max_chroma: 60,
+    text_left_brightness_min: 200,
 }
 ```
 
 ### 発行イベント
 
-| イベント                       | フィールド                                                     | 説明                                                   |
-| ------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------ |
-| `DetectionEvent::RoundVisible` | `text_present: bool`, `white_ratio: f64`, `timestamp: Instant` | テキスト検出(ラウンド進行中)                           |
-| `DetectionEvent::RoundGone`    | `white_ratio: f64`, `timestamp: Instant`                       | テキスト消失(リザルト画面、カットシーン、ラウンド終了) |
+| イベント                       | フィールド                                                                                  | 説明                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `DetectionEvent::RoundVisible` | `text_present: bool`, `white_ratio: f64`, `round_number: Option<u32>`, `timestamp: Instant` | テキスト検出(ラウンド進行中)。OCR 利用可能時は `round_number` 付与 |
+| `DetectionEvent::RoundGone`    | `white_ratio: f64`, `timestamp: Instant`                                                    | テキスト消失(リザルト画面、カットシーン、ラウンド終了)             |
 
 ## 1.6 検証済み解像度
 
@@ -205,6 +220,6 @@ flowchart TD
 
 ## 1.10 検討事項
 
+- [x] OCR ベースのラウンド番号抽出 — `run_ocr()` で `round_number` を `RoundVisible` に付与。OCR で "ラウンド" テキスト未検出時は偽陽性として `RoundGone` に置換
 - [ ] `dna-capture` がクライアント領域のみのフレーム(`GetClientRect`)を提供する場合、タイトルバー検出は不要になるが、無害(`0` を返す)
-- [ ] OCR ベースのラウンド番号抽出(Phase 2、 `dna-capture` の Windows OCR API 経由)
 - [ ] `DebouncedDetector` との統合仕様の詳細化(スパイク耐性の定量評価)
