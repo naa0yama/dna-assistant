@@ -101,6 +101,7 @@ impl Detector for RoundDetector {
             vec![DetectionEvent::RoundVisible {
                 text_present: true,
                 white_ratio: ratio,
+                round_number: None,
                 timestamp: now,
             }]
         } else {

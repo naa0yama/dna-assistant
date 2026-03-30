@@ -840,6 +840,7 @@ dependencies = [
  "win-screenshot",
  "windows 0.62.2",
  "windows-capture",
+ "windows-future 0.3.2",
 ]
 
 [[package]]

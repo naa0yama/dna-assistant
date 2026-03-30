@@ -15,6 +15,20 @@ pub enum DetectionEvent {
         /// When this was detected.
         timestamp: Instant,
     },
+    /// Q skill is active (SP cost "0" detected via OCR).
+    SkillActive {
+        /// OCR-recognized SP cost text.
+        sp_cost: String,
+        /// When this was detected.
+        timestamp: Instant,
+    },
+    /// Q skill is inactive / on standby (SP cost > 0 detected via OCR).
+    SkillOff {
+        /// OCR-recognized SP cost text.
+        sp_cost: String,
+        /// When this was detected.
+        timestamp: Instant,
+    },
     /// Q skill icon is greyed out (SP depleted).
     SkillGreyed {
         /// Ratio of bright icon pixels in the ROI.
@@ -48,6 +62,8 @@ pub enum DetectionEvent {
         text_present: bool,
         /// White pixel density in the ROI.
         white_ratio: f64,
+        /// OCR-recognized round number (None if OCR unavailable or failed).
+        round_number: Option<u32>,
         /// When this was detected.
         timestamp: Instant,
     },
@@ -64,6 +80,18 @@ pub enum DetectionEvent {
         text_ratio: f64,
         /// Dark pixel ratio in the background ROI.
         bg_dark_ratio: f64,
+        /// When this was detected.
+        timestamp: Instant,
+    },
+    /// Result screen detected via OCR ("依頼完了" text recognized).
+    ResultScreenVisible {
+        /// OCR-recognized text.
+        text: String,
+        /// When this was detected.
+        timestamp: Instant,
+    },
+    /// Result screen no longer visible (OCR did not find "依頼完了").
+    ResultScreenGone {
         /// When this was detected.
         timestamp: Instant,
     },

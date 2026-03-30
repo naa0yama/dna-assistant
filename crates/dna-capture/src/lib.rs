@@ -30,9 +30,8 @@ pub mod wgc;
 #[cfg(target_os = "windows")]
 pub mod window;
 
-// Phase 2: uncomment when OCR is implemented
-// #[cfg(target_os = "windows")]
-// pub mod ocr;
+#[cfg(target_os = "windows")]
+pub mod ocr;
 
 /// Backend-agnostic screen capture interface.
 ///
