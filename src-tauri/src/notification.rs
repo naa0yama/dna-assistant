@@ -191,11 +191,36 @@ impl NotificationManager {
         self.condition_start.remove(&kind);
     }
 
+    /// Check if a specific trigger kind is enabled via config toggles.
+    const fn is_trigger_enabled(&self, kind: TriggerKind) -> bool {
+        if !self.config.notifications_enabled {
+            return false;
+        }
+        match kind {
+            TriggerKind::SkillGreyed => self.config.notify_skill_enabled,
+            TriggerKind::RoundGone => self.config.notify_round_enabled,
+            TriggerKind::DialogVisible => self.config.notify_dialog_enabled,
+            TriggerKind::AllyHpLow => self.config.notify_ally_hp_enabled,
+            TriggerKind::ResultScreen => self.config.notify_result_enabled,
+        }
+    }
+
+    /// Check if the game window is currently the foreground window.
+    #[cfg(target_os = "windows")]
+    fn is_game_focused() -> bool {
+        dna_capture::window::is_game_foreground()
+    }
+
     /// Check if a condition has been sustained long enough and send notification.
     fn check_and_notify(&mut self, kind: TriggerKind, now: Instant) {
         let Some(&start) = self.condition_start.get(&kind) else {
             return;
         };
+
+        // Check per-trigger toggle
+        if !self.is_trigger_enabled(kind) {
+            return;
+        }
 
         let tc = trigger_config(kind, &self.config);
 
@@ -208,6 +233,12 @@ impl NotificationManager {
         if let Some(&last) = self.last_notified.get(&kind)
             && now.duration_since(last) < tc.cooldown
         {
+            return;
+        }
+
+        // Suppress when game is focused (if configured)
+        #[cfg(target_os = "windows")]
+        if self.config.suppress_when_game_focused && Self::is_game_focused() {
             return;
         }
 
@@ -227,11 +258,25 @@ impl NotificationManager {
         }
     }
 
-    /// Send a Windows Toast notification via `notify-rust`.
+    /// Send a test notification to verify toast delivery.
+    pub fn send_test_notification() {
+        Self::send_toast("DNA Assistant テスト", "通知が正常に動作しています");
+    }
+
+    /// Check if the app is running from an installed location (not `cargo run`).
     ///
-    /// Uses the Tauri app identifier as `app_id` so Windows attributes the
-    /// toast to DNA Assistant (not `PowerShell`). Sets `Default` sound and
-    /// a 25-second timeout so the toast stays visible.
+    /// Installed Tauri apps live under `Program Files` or `AppData\Local\Programs`.
+    /// Development builds run from `target\debug\`.
+    #[cfg(target_os = "windows")]
+    fn is_installed_app() -> bool {
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.to_str().map(String::from))
+            .is_some_and(|path| {
+                !path.contains("target\\debug") && !path.contains("target\\release")
+            })
+    }
+
     fn send_toast(title: &str, body: &str) {
         debug!(title, body, "sending toast notification");
 
@@ -239,10 +284,19 @@ impl NotificationManager {
         notification.summary(title).body(body);
 
         #[cfg(target_os = "windows")]
-        notification
-            .app_id("com.naa0yama.dna-assistant")
-            .sound_name("Default")
-            .timeout(notify_rust::Timeout::Milliseconds(25_000));
+        {
+            // Use the registered AUMID if the app was installed via MSI/NSIS,
+            // otherwise fall back to PowerShell's AUMID for dev builds.
+            let app_id = if Self::is_installed_app() {
+                "com.naa0yama.dna-assistant"
+            } else {
+                "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe"
+            };
+            notification
+                .app_id(app_id)
+                .sound_name("Default")
+                .timeout(notify_rust::Timeout::Milliseconds(25_000));
+        }
 
         let result = notification.show();
 

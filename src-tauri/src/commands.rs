@@ -5,6 +5,7 @@ use tauri::State;
 use tracing::instrument;
 
 use crate::monitor::{self, CaptureInfo, MonitorConfig, MonitorState, MonitorStatus};
+use crate::notification::NotificationManager;
 
 /// Start the background monitoring loop.
 ///
@@ -146,4 +147,11 @@ pub async fn save_settings(
     }
 
     Ok(())
+}
+
+/// Send a test toast notification.
+#[tauri::command]
+#[instrument(skip_all)]
+pub fn test_notification() {
+    NotificationManager::send_test_notification();
 }

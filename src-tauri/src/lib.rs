@@ -47,6 +47,7 @@ fn build() -> tauri::Result<tauri::App> {
             commands::get_settings,
             commands::get_default_settings,
             commands::save_settings,
+            commands::test_notification,
         ]);
     }
 

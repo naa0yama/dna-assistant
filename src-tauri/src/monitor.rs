@@ -65,6 +65,7 @@ use crate::notification::NotificationManager;
 ///
 /// Capture/detection timing fields are serialized as **milliseconds** (u64).
 /// Notification timing fields are serialized as **seconds** (f64).
+#[allow(clippy::struct_excessive_bools)] // Settings struct with many toggles
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonitorConfig {
     /// Capture interval between frames (ms).
@@ -115,6 +116,27 @@ pub struct MonitorConfig {
     /// Ratio of agreeing frames required within the window (0.0-1.0).
     #[serde(default = "default_confirmation_ratio")]
     pub confirmation_ratio: f64,
+    /// Master toggle for all notifications.
+    #[serde(default = "default_true")]
+    pub notifications_enabled: bool,
+    /// Whether to notify on `SkillGreyed` events.
+    #[serde(default = "default_true")]
+    pub notify_skill_enabled: bool,
+    /// Whether to notify on `RoundGone` events.
+    #[serde(default = "default_true")]
+    pub notify_round_enabled: bool,
+    /// Whether to notify on `DialogVisible` events.
+    #[serde(default = "default_true")]
+    pub notify_dialog_enabled: bool,
+    /// Whether to notify on `AllyHpLow` events.
+    #[serde(default = "default_true")]
+    pub notify_ally_hp_enabled: bool,
+    /// Whether to notify on `ResultScreen` events.
+    #[serde(default = "default_true")]
+    pub notify_result_enabled: bool,
+    /// Suppress notifications when the game window is the foreground window.
+    #[serde(default)]
+    pub suppress_when_game_focused: bool,
 }
 
 #[cfg(target_os = "windows")]
@@ -140,7 +162,7 @@ impl Default for MonitorConfig {
             window_search_interval: Duration::from_millis(3000),
             max_capture_retries: 3,
             preview_interval: Duration::from_millis(3000),
-            round_transition_suppress: Duration::from_secs(15),
+            round_transition_suppress: Duration::from_secs(10),
             notification_cooldown: Duration::from_secs(60),
             notify_skill_sustain: Duration::from_secs(5),
             notify_dialog_sustain: Duration::from_secs(3),
@@ -152,6 +174,13 @@ impl Default for MonitorConfig {
             dialog_enabled: true,
             confirmation_window: Duration::from_secs(3),
             confirmation_ratio: 0.80,
+            notifications_enabled: true,
+            notify_skill_enabled: true,
+            notify_round_enabled: true,
+            notify_dialog_enabled: true,
+            notify_ally_hp_enabled: true,
+            notify_result_enabled: true,
+            suppress_when_game_focused: false,
         }
     }
 }

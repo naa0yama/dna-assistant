@@ -277,7 +277,42 @@
       <!-- Notifications -->
       <div class="card bg-base-100 shadow-md">
         <div class="card-body p-4">
-          <span class="text-xs text-base-content/50 font-semibold uppercase mb-2">Notifications</span>
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-base-content/50 font-semibold uppercase">Notifications</span>
+            <button class="btn btn-warning btn-xs" id="test-notification-btn">Test Notification</button>
+          </div>
+          <!-- Master toggle + Per-event toggles + Game focus suppress -->
+          <div class="grid grid-cols-3 gap-x-6 gap-y-3 mb-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notifications_enabled">
+              <span class="label-text text-xs">Enable notifications</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notify_skill_enabled">
+              <span class="label-text text-xs">Skill</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notify_round_enabled">
+              <span class="label-text text-xs">Round</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notify_dialog_enabled">
+              <span class="label-text text-xs">Dialog</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notify_ally_hp_enabled">
+              <span class="label-text text-xs">Ally HP</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notify_result_enabled">
+              <span class="label-text text-xs">Result Screen</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="suppress_when_game_focused">
+              <span class="label-text text-xs">Suppress when game focused</span>
+            </label>
+          </div>
+          <!-- Timing settings -->
           <div class="grid grid-cols-2 gap-x-6 gap-y-3">
             <label class="form-control">
               <div class="label py-0"><span class="label-text text-xs">Notification cooldown (sec)</span></div>

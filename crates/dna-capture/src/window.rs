@@ -6,7 +6,9 @@
 use anyhow::{Result, bail};
 use tracing::{debug, instrument};
 use windows::Win32::Foundation::{HWND, LPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextW, IsWindow};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetForegroundWindow, GetWindowTextW, IsWindow,
+};
 use windows::core::BOOL;
 
 /// Window title substring used to identify the game window.
@@ -53,6 +55,27 @@ pub fn is_window_alive(hwnd: HWND) -> bool {
     // SAFETY: `IsWindow` is a read-only check that accepts any HWND value.
     // Passing an invalid HWND simply returns FALSE without side effects.
     unsafe { IsWindow(Some(hwnd)).as_bool() }
+}
+
+/// Check if the game window is currently the foreground (active) window.
+#[must_use]
+pub fn is_game_foreground() -> bool {
+    // SAFETY: `GetForegroundWindow` returns the handle of the foreground window.
+    // No special safety requirements beyond valid Win32 state.
+    let fg = unsafe { GetForegroundWindow() };
+    if fg.0.is_null() {
+        return false;
+    }
+    let mut title_buf = [0u16; 256];
+    // SAFETY: Reading the window title into a stack buffer.
+    let len = unsafe { GetWindowTextW(fg, &mut title_buf) };
+    if len == 0 {
+        return false;
+    }
+    let len_usize = usize::try_from(len).unwrap_or(0);
+    #[allow(clippy::indexing_slicing)]
+    let title = String::from_utf16_lossy(&title_buf[..len_usize]);
+    title.contains(GAME_WINDOW_TITLE)
 }
 
 /// Callback for `EnumWindows`. Writes the first matching HWND into the

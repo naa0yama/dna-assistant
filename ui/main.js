@@ -392,6 +392,18 @@ settingsResetBtn.addEventListener("click", async () => {
   }
 });
 
+// --- Test notification ---
+const testNotificationBtn = document.getElementById("test-notification-btn");
+testNotificationBtn.addEventListener("click", async () => {
+  try {
+    await invoke("test_notification");
+    testNotificationBtn.textContent = "Sent!";
+    setTimeout(() => { testNotificationBtn.textContent = "Test Notification"; }, 1500);
+  } catch (e) {
+    console.error("test_notification failed:", e);
+  }
+});
+
 // --- Initial status ---
 invoke("get_status").then(updateStatusUI).catch(console.error);
 invoke("get_settings").then(updateDetectorEnabledState).catch(console.error);
