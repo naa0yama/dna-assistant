@@ -165,4 +165,41 @@ mod tests {
         assert!(config.dialog.text_presence_threshold > 0.0);
         assert!(config.dialog.bg_dark_threshold > 0.0);
     }
+
+    #[test]
+    fn round_number_roi_config_has_valid_ranges() {
+        let config = RoundNumberRoiConfig::default();
+
+        // round_end ROI
+        assert!(config.round_end.x + config.round_end.width <= 1.0);
+        assert!(config.round_end.y + config.round_end.height <= 1.0);
+
+        // select_header ROI
+        assert!(config.select_header.x + config.select_header.width <= 1.0);
+        assert!(config.select_header.y + config.select_header.height <= 1.0);
+
+        // select_next_round ROI
+        assert!(config.select_next_round.x + config.select_next_round.width <= 1.0);
+        assert!(config.select_next_round.y + config.select_next_round.height <= 1.0);
+
+        // select_completed_round ROI
+        assert!(config.select_completed_round.x + config.select_completed_round.width <= 1.0);
+        assert!(config.select_completed_round.y + config.select_completed_round.height <= 1.0);
+    }
+
+    #[test]
+    fn round_number_roi_config_serialization_roundtrip() {
+        let config = RoundNumberRoiConfig::default();
+        let json = serde_json::to_string(&config).expect("serialize");
+        let deserialized: RoundNumberRoiConfig = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn detection_config_serialization_roundtrip() {
+        let config = DetectionConfig::default();
+        let json = serde_json::to_string(&config).expect("serialize");
+        let deserialized: DetectionConfig = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(config, deserialized);
+    }
 }
