@@ -63,12 +63,36 @@ const STATE_STYLES = {
   capturing: { text: "Capturing", cls: "badge-success" },
 };
 
+const ocrStatus = document.getElementById("ocr-status");
+
 function updateStatusUI(status) {
   const style = STATE_STYLES[status.state] || STATE_STYLES.idle;
   statusBadge.textContent = style.text;
   statusBadge.className = "badge " + style.cls;
   framesCount.textContent = status.frames_captured;
   eventsCount.textContent = status.events_detected;
+
+  // OCR status
+  if (status.state === "idle") {
+    ocrStatus.textContent = "--";
+    ocrStatus.className = "text-base-content/40";
+  } else if (status.ocr_available) {
+    ocrStatus.textContent = "Available";
+    ocrStatus.className = "text-success";
+  } else {
+    ocrStatus.textContent = "Unavailable";
+    ocrStatus.className = "text-warning";
+  }
+
+  // Resolution warning
+  const resWarning = document.getElementById("resolution-warning");
+  const resWarningText = document.getElementById("resolution-warning-text");
+  if (status.resolution_warning) {
+    resWarningText.textContent = status.resolution_warning;
+    resWarning.classList.remove("hidden");
+  } else {
+    resWarning.classList.add("hidden");
+  }
 
   // Frame timing (Detection page only)
   const capFrameTiming = document.getElementById("cap-frame-timing");
@@ -90,6 +114,16 @@ const detectorState = {
   dialog: { state: "unknown", label: "--", time: null },
 };
 
+// --- Detector enabled state ---
+const detectorEnabled = { skill: true, round: true, dialog: true };
+
+function updateDetectorEnabledState(config) {
+  detectorEnabled.skill = config.skill_enabled !== false;
+  detectorEnabled.round = config.round_enabled !== false;
+  detectorEnabled.dialog = config.dialog_enabled !== false;
+  syncDetectorUI();
+}
+
 function updateDetectorBadge(el, state, label) {
   el.dataset.state = state;
   el.textContent = label;
@@ -98,13 +132,37 @@ function updateDetectorBadge(el, state, label) {
 function syncDetectorUI() {
   const s = detectorState;
   // Main page badges
-  updateDetectorBadge(detSkill, s.skill.state, s.skill.label);
-  updateDetectorBadge(detRound, s.round.state, s.round.label);
-  updateDetectorBadge(detDialog, s.dialog.state, s.dialog.label);
+  if (detectorEnabled.skill) {
+    updateDetectorBadge(detSkill, s.skill.state, s.skill.label);
+  } else {
+    updateDetectorBadge(detSkill, "disabled", "Disabled");
+  }
+  if (detectorEnabled.round) {
+    updateDetectorBadge(detRound, s.round.state, s.round.label);
+  } else {
+    updateDetectorBadge(detRound, "disabled", "Disabled");
+  }
+  if (detectorEnabled.dialog) {
+    updateDetectorBadge(detDialog, s.dialog.state, s.dialog.label);
+  } else {
+    updateDetectorBadge(detDialog, "disabled", "Disabled");
+  }
   // Detection page badges
-  updateDetectorBadge(detSkillFull, s.skill.state, s.skill.label);
-  updateDetectorBadge(detRoundFull, s.round.state, s.round.label);
-  updateDetectorBadge(detDialogFull, s.dialog.state, s.dialog.label);
+  if (detectorEnabled.skill) {
+    updateDetectorBadge(detSkillFull, s.skill.state, s.skill.label);
+  } else {
+    updateDetectorBadge(detSkillFull, "disabled", "Disabled");
+  }
+  if (detectorEnabled.round) {
+    updateDetectorBadge(detRoundFull, s.round.state, s.round.label);
+  } else {
+    updateDetectorBadge(detRoundFull, "disabled", "Disabled");
+  }
+  if (detectorEnabled.dialog) {
+    updateDetectorBadge(detDialogFull, s.dialog.state, s.dialog.label);
+  } else {
+    updateDetectorBadge(detDialogFull, "disabled", "Disabled");
+  }
   // Detection page times
   detSkillTime.textContent = s.skill.time || "--";
   detRoundTime.textContent = s.round.time || "--";
@@ -137,26 +195,30 @@ function updateDetectorFromEvent(kind) {
 }
 
 // --- Log entries ---
-function createLogEntry(kind, detail) {
+function createLogEntry(kind, detail, roundNumber, elapsed) {
   const now = new Date().toLocaleTimeString("ja-JP", { hour12: false });
+  const numStr = roundNumber != null ? String(roundNumber) : "";
+  const elapsedStr = elapsed || "";
   const entry = document.createElement("div");
   entry.className = "log-entry";
   entry.innerHTML =
     '<span class="log-time">' + now + "</span>" +
+    '<span class="log-elapsed">' + elapsedStr + "</span>" +
     '<span class="log-kind" data-kind="' + kind + '">' + kind + "</span>" +
+    '<span class="log-num">' + numStr + "</span>" +
     '<span class="log-msg">' + detail + "</span>";
   return entry;
 }
 
-function addLogEntry(kind, detail) {
+function addLogEntry(kind, detail, roundNumber, elapsed) {
   // Remove placeholder
   for (const log of [eventLog, eventLogFull]) {
     const ph = log.querySelector("p");
     if (ph) ph.remove();
   }
 
-  const entry1 = createLogEntry(kind, detail);
-  const entry2 = createLogEntry(kind, detail);
+  const entry1 = createLogEntry(kind, detail, roundNumber, elapsed);
+  const entry2 = createLogEntry(kind, detail, roundNumber, elapsed);
   eventLog.prepend(entry1);
   eventLogFull.prepend(entry2);
 
@@ -187,8 +249,8 @@ listen("monitor-status", (event) => {
 });
 
 listen("detection-event", (event) => {
-  const { kind, detail } = event.payload;
-  addLogEntry(kind, detail);
+  const { kind, detail, round_number, elapsed } = event.payload;
+  addLogEntry(kind, detail, round_number, elapsed);
   updateDetectorFromEvent(kind);
 });
 
@@ -263,7 +325,11 @@ function populateSettings(config) {
   for (const input of settingsInputs) {
     const key = input.dataset.key;
     if (key in config) {
-      input.value = config[key];
+      if (input.type === "checkbox") {
+        input.checked = config[key];
+      } else {
+        input.value = config[key];
+      }
     }
   }
 }
@@ -272,16 +338,21 @@ function populateSettings(config) {
 const MS_KEYS = new Set([
   "capture_interval", "window_search_interval", "preview_interval",
 ]);
+const INT_KEYS = new Set(["max_capture_retries"]);
 
 function collectSettings() {
   const config = {};
   for (const input of settingsInputs) {
     const key = input.dataset.key;
-    const val = parseFloat(input.value);
-    if (key === "max_capture_retries" || MS_KEYS.has(key)) {
-      config[key] = Math.round(val);
+    if (input.type === "checkbox") {
+      config[key] = input.checked;
     } else {
-      config[key] = val;
+      const val = parseFloat(input.value);
+      if (INT_KEYS.has(key) || MS_KEYS.has(key)) {
+        config[key] = Math.round(val);
+      } else {
+        config[key] = val;
+      }
     }
   }
   return config;
@@ -291,6 +362,7 @@ async function loadSettings() {
   try {
     const config = await invoke("get_settings");
     populateSettings(config);
+    updateDetectorEnabledState(config);
   } catch (e) {
     console.error("get_settings failed:", e);
   }
@@ -300,6 +372,7 @@ settingsSaveBtn.addEventListener("click", async () => {
   try {
     const config = collectSettings();
     await invoke("save_settings", { config });
+    updateDetectorEnabledState(config);
     settingsSaveBtn.textContent = "Saved!";
     setTimeout(() => { settingsSaveBtn.textContent = "Save"; }, 1500);
   } catch (e) {
@@ -321,3 +394,4 @@ settingsResetBtn.addEventListener("click", async () => {
 
 // --- Initial status ---
 invoke("get_status").then(updateStatusUI).catch(console.error);
+invoke("get_settings").then(updateDetectorEnabledState).catch(console.error);

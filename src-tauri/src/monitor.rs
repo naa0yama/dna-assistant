@@ -100,13 +100,43 @@ pub struct MonitorConfig {
     /// Sustain for `AllyHpLow` before notification (sec).
     #[serde(with = "serde_duration_secs")]
     pub notify_ally_hp_sustain: Duration,
+    /// Whether the Skill detector is enabled.
+    #[serde(default = "default_true")]
+    pub skill_enabled: bool,
+    /// Whether the Round detector is enabled.
+    #[serde(default = "default_true")]
+    pub round_enabled: bool,
+    /// Whether the Dialog detector is enabled.
+    #[serde(default = "default_true")]
+    pub dialog_enabled: bool,
+    /// Sliding window duration for transition confirmation (sec).
+    #[serde(default = "default_confirmation_window", with = "serde_duration_secs")]
+    pub confirmation_window: Duration,
+    /// Ratio of agreeing frames required within the window (0.0-1.0).
+    #[serde(default = "default_confirmation_ratio")]
+    pub confirmation_ratio: f64,
+}
+
+#[cfg(target_os = "windows")]
+const fn default_true() -> bool {
+    true
+}
+
+#[cfg(target_os = "windows")]
+const fn default_confirmation_window() -> Duration {
+    Duration::from_secs(3)
+}
+
+#[cfg(target_os = "windows")]
+const fn default_confirmation_ratio() -> f64 {
+    0.80
 }
 
 #[cfg(target_os = "windows")]
 impl Default for MonitorConfig {
     fn default() -> Self {
         Self {
-            capture_interval: Duration::from_millis(2000),
+            capture_interval: Duration::from_millis(200),
             window_search_interval: Duration::from_millis(3000),
             max_capture_retries: 3,
             preview_interval: Duration::from_millis(3000),
@@ -117,6 +147,11 @@ impl Default for MonitorConfig {
             notify_round_sustain: Duration::from_secs(5),
             notify_round_cooldown: Duration::from_secs(10),
             notify_ally_hp_sustain: Duration::from_secs(10),
+            skill_enabled: true,
+            round_enabled: true,
+            dialog_enabled: true,
+            confirmation_window: Duration::from_secs(3),
+            confirmation_ratio: 0.80,
         }
     }
 }
@@ -175,6 +210,10 @@ mod serde_duration_secs {
 /// Granularity for interruptible sleeps (check stop flag every 200ms).
 const SLEEP_GRANULARITY: Duration = Duration::from_millis(200);
 
+#[cfg(target_os = "windows")]
+/// Brightness threshold for OCR binarization of white text on dark backgrounds.
+const OCR_BINARIZE_THRESHOLD: u8 = 140;
+
 /// Current monitoring state.
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -204,6 +243,10 @@ pub struct MonitorStatus {
     pub frame_time_ms: f64,
     /// Frames per second (rolling average).
     pub fps: f64,
+    /// Whether OCR engine is available.
+    pub ocr_available: bool,
+    /// Resolution warning (shown when frame size is below recommended).
+    pub resolution_warning: Option<String>,
 }
 
 #[cfg(target_os = "windows")]
@@ -216,6 +259,8 @@ impl Default for MonitorStatus {
             last_event: None,
             frame_time_ms: 0.0,
             fps: 0.0,
+            ocr_available: false,
+            resolution_warning: None,
         }
     }
 }
@@ -228,6 +273,10 @@ pub struct DetectionEventPayload {
     pub kind: String,
     /// Human-readable detail.
     pub detail: String,
+    /// Current round number (if known).
+    pub round_number: Option<u32>,
+    /// Elapsed time for the current round (e.g., "1m 23s").
+    pub elapsed: Option<String>,
 }
 
 // --- Windows-only: monitor loop, TransitionFilter, and helpers ---
@@ -247,16 +296,25 @@ mod platform {
         Dialog,
         AllyHp,
         ResultScreen,
+        RoundNumber,
     }
 
     /// Tracks last-seen event kind per detector category, forwarding only transitions.
     ///
-    /// Also suppresses Skill detector flapping during round transitions (the screen
-    /// transition after `RoundGone` causes the skill icon to disappear temporarily).
+    /// Uses a sliding-window approach: a new state must appear in at least
+    /// `confirmation_ratio` of the last `window_size` frames before being
+    /// confirmed. This tolerates occasional OCR/detection noise.
+    /// Also suppresses Skill detector flapping during round transitions.
     #[derive(Debug)]
     struct TransitionFilter {
-        /// Maps each category to the last-seen event kind name.
-        state: [Option<&'static str>; 5],
+        /// Confirmed state per category.
+        state: [Option<&'static str>; 6],
+        /// Sliding window of recent event kinds per category.
+        history: [std::collections::VecDeque<&'static str>; 6],
+        /// Number of frames in the sliding window.
+        window_size: usize,
+        /// Ratio threshold (0.0-1.0) for confirmation.
+        confirmation_ratio: f64,
         /// When `RoundGone` was last seen (for skill suppression).
         round_gone_at: Option<Instant>,
         /// Duration to suppress skill events after round transition.
@@ -264,15 +322,24 @@ mod platform {
     }
 
     impl TransitionFilter {
-        const fn new(round_transition_suppress: Duration) -> Self {
+        fn new(
+            round_transition_suppress: Duration,
+            window_size: usize,
+            confirmation_ratio: f64,
+        ) -> Self {
             Self {
-                state: [None; 5],
+                state: [None; 6],
+                history: std::array::from_fn(|_| {
+                    std::collections::VecDeque::with_capacity(window_size)
+                }),
+                window_size,
+                confirmation_ratio,
                 round_gone_at: None,
                 round_transition_suppress,
             }
         }
 
-        /// Returns `true` if this event represents a state change worth showing.
+        /// Returns `true` if this event represents a confirmed state change.
         fn is_transition(&mut self, event: &DetectionEvent) -> bool {
             let now = Instant::now();
 
@@ -298,19 +365,54 @@ mod platform {
                 return false;
             }
 
+            // Round number events are internal-only (update round state
+            // but don't appear in the UI event log). Always suppress here.
+            if matches!(
+                event,
+                DetectionEvent::RoundEndScreen { .. } | DetectionEvent::RoundSelectScreen { .. }
+            ) {
+                return false;
+            }
+
             #[allow(clippy::as_conversions)] // enum to usize is safe
             let idx = categorize(event) as usize;
             let kind = event_kind_name(event);
+
+            // Push into sliding window
             #[allow(clippy::indexing_slicing)] // idx is bounded by enum variant count
-            let slot = &mut self.state[idx];
-            if *slot == Some(kind) {
+            let history = &mut self.history[idx];
+            history.push_back(kind);
+            while history.len() > self.window_size {
+                history.pop_front();
+            }
+
+            #[allow(clippy::indexing_slicing)]
+            let confirmed = &mut self.state[idx];
+
+            // Already in this state — no transition
+            if *confirmed == Some(kind) {
                 return false;
             }
-            *slot = Some(kind);
-            true
+
+            // Need a full window before confirming any transition
+            if history.len() < self.window_size {
+                return false;
+            }
+
+            // Count how many frames in the window agree with this kind
+            let agree_count = history.iter().filter(|&&k| k == kind).count();
+            #[allow(clippy::cast_precision_loss, clippy::as_conversions)]
+            let ratio = (agree_count as f64) / (self.window_size as f64);
+
+            if ratio >= self.confirmation_ratio {
+                *confirmed = Some(kind);
+                true
+            } else {
+                false
+            }
         }
 
-        /// Check if any event in the list would be a transition (without consuming).
+        /// Check if any event in the list would be a potential transition.
         fn has_pending_transition(&self, events: &[DetectionEvent]) -> bool {
             events.iter().any(|e| {
                 #[allow(clippy::as_conversions)]
@@ -339,6 +441,9 @@ mod platform {
             }
             DetectionEvent::ResultScreenVisible { .. }
             | DetectionEvent::ResultScreenGone { .. } => DetectorCategory::ResultScreen,
+            DetectionEvent::RoundEndScreen { .. } | DetectionEvent::RoundSelectScreen { .. } => {
+                DetectorCategory::RoundNumber
+            }
         }
     }
 
@@ -490,13 +595,43 @@ mod platform {
     ) {
         let det_config = DetectionConfig::default();
         let mut notification_mgr = NotificationManager::new(&monitor_config);
-        let mut transition_filter = TransitionFilter::new(monitor_config.round_transition_suppress);
+        // Compute window size: confirmation_window / capture_interval, at least 1
+        let window_size = monitor_config
+            .confirmation_window
+            .as_millis()
+            .checked_div(monitor_config.capture_interval.as_millis().max(1))
+            .unwrap_or(1)
+            .max(1);
+        #[allow(clippy::cast_possible_truncation, clippy::as_conversions)]
+        let window_size = window_size as usize;
+        info!(
+            window_size,
+            confirmation_ratio = monitor_config.confirmation_ratio,
+            "transition filter: sliding window"
+        );
+        let mut transition_filter = TransitionFilter::new(
+            monitor_config.round_transition_suppress,
+            window_size,
+            monitor_config.confirmation_ratio,
+        );
+
+        // Round state tracking
+        let mut current_round: Option<u32> = None;
+        let mut round_start: Option<Instant> = None;
+        // Pending round numbers from OCR (cleared on RoundGone)
+        let mut detected_end_round: Option<u32> = None;
+        let mut detected_select_round: Option<u32> = None;
+        // Recent confirmed round numbers (max 3) for consecutive inference
+        let mut round_history: Vec<u32> = Vec::with_capacity(3);
+        // Cached resolution warning to avoid mutex lock every frame
+        let mut prev_resolution_warning: Option<String> = None;
 
         // Build detectors.
         // All detectors call analyze() directly. TransitionFilter handles
         // state-change deduplication, and round_transition_suppress handles
         // skill flapping during screen transitions.
         // AllyHpDetector is excluded (unverified placeholder config).
+        let round_number_rois = dna_detector::config::RoundNumberRoiConfig::default();
         let skill_detector = SkillDetector::new(det_config.skill);
         let round_detector = RoundDetector::new(det_config.round);
         let dialog_detector = DialogDetector::new(det_config.dialog);
@@ -512,6 +647,8 @@ mod platform {
                 None
             }
         };
+
+        update_status(&status, |s| s.ocr_available = ocr_engine.is_some());
 
         loop {
             if stop_flag.load(Ordering::Relaxed) {
@@ -596,17 +733,36 @@ mod platform {
                 // Wrap in Arc (zero-copy move) for shared access with IPC
                 let frame = Arc::new(frame);
 
+                // Check resolution every frame (game window can be resized)
+                let warning = check_resolution(frame.width(), frame.height());
+                if warning != prev_resolution_warning {
+                    if let Some(ref msg) = warning {
+                        warn!(%msg, width = frame.width(), height = frame.height(), "resolution warning");
+                    }
+                    prev_resolution_warning = warning;
+                    update_status(&status, |s| {
+                        s.resolution_warning.clone_from(&prev_resolution_warning);
+                    });
+                    emit_status(&app_handle, &status);
+                }
+
                 // Store latest frame for Detection page preview
                 store_latest_frame(&latest_frame, frame.clone(), &capture_info);
 
                 // Crop titlebar
                 let game_frame = crop_titlebar(&frame);
 
-                // Run pixel detectors
+                // Run pixel detectors (skip disabled ones)
                 let mut raw_events: Vec<DetectionEvent> = Vec::new();
-                raw_events.extend(skill_detector.analyze(&game_frame));
-                raw_events.extend(round_detector.analyze(&game_frame));
-                raw_events.extend(dialog_detector.analyze(&game_frame));
+                if monitor_config.skill_enabled {
+                    raw_events.extend(skill_detector.analyze(&game_frame));
+                }
+                if monitor_config.round_enabled {
+                    raw_events.extend(round_detector.analyze(&game_frame));
+                }
+                if monitor_config.dialog_enabled {
+                    raw_events.extend(dialog_detector.analyze(&game_frame));
+                }
 
                 // OCR-assisted detection (Phase 2)
                 // Only run OCR when pixel detector state changes (transition)
@@ -615,6 +771,35 @@ mod platform {
                     && transition_filter.has_pending_transition(&raw_events)
                 {
                     run_ocr(ocr_engine, &game_frame, &mut raw_events);
+                }
+
+                // Round number OCR (independent of pixel detector transitions).
+                // Scans for "XX ラウンド終了" and round selection screens
+                // to extract accurate round numbers.
+                if let Some(ref ocr_engine) = ocr_engine {
+                    run_round_number_ocr(
+                        ocr_engine,
+                        &game_frame,
+                        &mut raw_events,
+                        &round_number_rois,
+                    );
+                }
+
+                // Collect round numbers from OCR events (internal-only, not shown in UI).
+                // These are compared and resolved when RoundGone fires.
+                for event in &raw_events {
+                    match event {
+                        DetectionEvent::RoundEndScreen { round_number, .. } => {
+                            detected_end_round = Some(*round_number);
+                        }
+                        DetectionEvent::RoundSelectScreen {
+                            completed_round: Some(done),
+                            ..
+                        } => {
+                            detected_select_round = Some(*done);
+                        }
+                        _ => {}
+                    }
                 }
 
                 // Notification uses raw events (needs sustained-condition tracking)
@@ -643,11 +828,58 @@ mod platform {
 
                     // Emit transitions to frontend
                     for event in &transition_events {
+                        let mut elapsed = None;
+
+                        match event {
+                            DetectionEvent::RoundVisible { .. } => {
+                                if round_start.is_none() {
+                                    round_start = Some(Instant::now());
+                                }
+                                // Clear stale OCR data from previous cycle
+                                detected_end_round = None;
+                                detected_select_round = None;
+                            }
+                            DetectionEvent::RoundGone { .. } => {
+                                // Calculate elapsed time for this round
+                                elapsed = round_start.map(|start| format_elapsed(start.elapsed()));
+                                round_start = None;
+
+                                // Resolve completed round number from OCR sources
+                                let completed = resolve_round_number(
+                                    detected_end_round.take(),
+                                    detected_select_round.take(),
+                                    current_round,
+                                    &round_history,
+                                );
+                                if let Some(num) = completed {
+                                    current_round = Some(num);
+                                    // Update history (keep last 3)
+                                    round_history.push(num);
+                                    if round_history.len() > 3 {
+                                        round_history.remove(0);
+                                    }
+                                }
+                                // Advance to next round after emitting
+                                // (deferred: update current_round after payload)
+                            }
+                            _ => {}
+                        }
+
                         let payload = DetectionEventPayload {
                             kind: event_kind_name(event).into(),
                             detail: event_description(event),
+                            round_number: current_round,
+                            elapsed,
                         };
                         let _ = app_handle.emit("detection-event", &payload);
+
+                        // After emitting RoundGone, advance to next round
+                        if matches!(event, DetectionEvent::RoundGone { .. }) {
+                            if let Some(num) = current_round {
+                                current_round = Some(num.saturating_add(1));
+                            }
+                            round_start = Some(Instant::now());
+                        }
                     }
                 }
 
@@ -716,6 +948,8 @@ mod platform {
             DetectionEvent::ResultScreenGone { .. } => "ResultScreenGone",
             DetectionEvent::DialogVisible { .. } => "DialogVisible",
             DetectionEvent::DialogGone { .. } => "DialogGone",
+            DetectionEvent::RoundEndScreen { .. } => "RoundEndScreen",
+            DetectionEvent::RoundSelectScreen { .. } => "RoundSelectScreen",
         }
     }
 
@@ -732,6 +966,108 @@ mod platform {
             remaining = remaining.saturating_sub(chunk);
         }
         false
+    }
+
+    /// Minimum recommended width for reliable OCR detection.
+    const MIN_OCR_WIDTH: u32 = 1600;
+
+    /// Known tested frame sizes (width x height, including titlebar).
+    const TESTED_RESOLUTIONS: &[(u32, u32)] =
+        &[(1282, 752), (1368, 800), (1602, 932), (1922, 1112)];
+
+    /// Check frame resolution and return a warning if below recommended.
+    fn check_resolution(width: u32, height: u32) -> Option<String> {
+        let is_known = TESTED_RESOLUTIONS
+            .iter()
+            .any(|&(w, h)| w == width && h == height);
+
+        if width < MIN_OCR_WIDTH {
+            Some(format!(
+                "Resolution {width}x{height} is below recommended (1600x900+). OCR accuracy may be degraded."
+            ))
+        } else if !is_known {
+            Some(format!(
+                "Resolution {width}x{height} has not been tested. Detection may be inaccurate."
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Resolve the completed round number from multiple OCR sources.
+    ///
+    /// Uses recent round history to validate candidates:
+    /// 1. Both sources agree → adopt
+    /// 2. Both disagree → pick the one that is `current` (expected value)
+    /// 3. Only one source → adopt only if it equals `current` (plausible)
+    /// 4. No sources → infer from history (last + 1 if consecutive)
+    fn resolve_round_number(
+        end_round: Option<u32>,
+        select_round: Option<u32>,
+        current: Option<u32>,
+        history: &[u32],
+    ) -> Option<u32> {
+        let candidate = match (end_round, select_round) {
+            (Some(e), Some(s)) if e == s => Some(e),
+            (Some(e), Some(s)) => {
+                // Disagree: pick the one matching current
+                if current == Some(e) {
+                    Some(e)
+                } else if current == Some(s) {
+                    Some(s)
+                } else {
+                    None
+                }
+            }
+            (Some(e), None) => Some(e),
+            (None, Some(s)) => Some(s),
+            (None, None) => None,
+        };
+
+        // Validate candidate against current round
+        if let Some(num) = candidate {
+            // Both sources agreed → high confidence, accept unconditionally
+            if end_round.is_some() && select_round.is_some() {
+                return Some(num);
+            }
+            // Matches current round → plausible
+            if current == Some(num) {
+                return Some(num);
+            }
+            // No current to validate against; accept if we have history
+            if current.is_none() && !history.is_empty() {
+                return Some(num);
+            }
+            // Single source that doesn't match current → reject (fall through)
+        }
+
+        // Fallback: infer from history if rounds are consecutive
+        // e.g., history [4, 5, 6] → next completed = 7
+        if history.len() >= 2 {
+            let is_consecutive = history.windows(2).all(|w| {
+                w.first()
+                    .and_then(|a| w.get(1).map(|b| a.saturating_add(1) == *b))
+                    .unwrap_or(false)
+            });
+            if is_consecutive && let Some(last) = history.last() {
+                return Some(last.saturating_add(1));
+            }
+        }
+
+        // No reliable source — return None rather than repeating current_round
+        None
+    }
+
+    /// Format a duration as human-readable elapsed time (e.g., "1m 23s").
+    fn format_elapsed(duration: Duration) -> String {
+        let total_secs = duration.as_secs();
+        let mins = total_secs / 60;
+        let secs = total_secs % 60;
+        if mins > 0 {
+            format!("{mins}m {secs:02}s")
+        } else {
+            format!("{secs}s")
+        }
     }
 
     /// Get a human-readable description for a detection event.
@@ -763,6 +1099,18 @@ mod platform {
             DetectionEvent::ResultScreenGone { .. } => String::from("リザルト終了"),
             DetectionEvent::DialogVisible { .. } => String::from("ダイアログ表示"),
             DetectionEvent::DialogGone { .. } => String::from("ダイアログ消失"),
+            DetectionEvent::RoundEndScreen { round_number, .. } => {
+                format!("ラウンド {round_number:02} 終了")
+            }
+            DetectionEvent::RoundSelectScreen {
+                next_round,
+                completed_round,
+                ..
+            } => match (next_round, completed_round) {
+                (Some(next), _) => format!("次のラウンド: {next:02}"),
+                (None, Some(done)) => format!("完了ラウンド: {done:02}"),
+                _ => String::from("ラウンド選択画面"),
+            },
         }
     }
 
@@ -801,11 +1149,13 @@ mod platform {
             height: 0.10,
         };
         if has_round_visible && let Some(ocr_image) = ocr_round_roi.crop(game_frame) {
-            match ocr_engine.recognize_text(&ocr_image) {
+            let binarized =
+                dna_capture::ocr::binarize_white_text(&ocr_image, OCR_BINARIZE_THRESHOLD);
+            match ocr_engine.recognize_text(&binarized) {
                 Ok(text) => {
                     let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
                     let has_round_text = normalized.contains("ラウンド");
-                    let round_num = parse_round_number(&text);
+                    let round_num = dna_detector::round_number::parse(&text);
                     debug!(
                         round_number = ?round_num,
                         has_round_text,
@@ -854,7 +1204,9 @@ mod platform {
             height: 0.20,
         };
         if has_round_gone && let Some(ocr_image) = ocr_result_roi.crop(game_frame) {
-            match ocr_engine.recognize_text(&ocr_image) {
+            let binarized =
+                dna_capture::ocr::binarize_white_text(&ocr_image, OCR_BINARIZE_THRESHOLD);
+            match ocr_engine.recognize_text(&binarized) {
                 Ok(text) => {
                     debug!(ocr_text = %text, "result screen OCR result");
                     if text.contains("依頼完了") {
@@ -882,7 +1234,9 @@ mod platform {
                 height: 0.10,
             };
             if let Some(roi_image) = ocr_skill_roi.crop(game_frame) {
-                match ocr_engine.recognize_text(&roi_image) {
+                let binarized =
+                    dna_capture::ocr::binarize_white_text(&roi_image, OCR_BINARIZE_THRESHOLD);
+                match ocr_engine.recognize_text(&binarized) {
                     Ok(text) => {
                         // Parse SP cost: remove "Q" (key binding) and "強化" (label),
                         // extract remaining digits. "0" = active, non-zero = off.
@@ -921,7 +1275,9 @@ mod platform {
             height: 0.20,
         };
         if has_dialog_visible && let Some(ocr_image) = ocr_dialog_roi.crop(game_frame) {
-            match ocr_engine.recognize_text(&ocr_image) {
+            let binarized =
+                dna_capture::ocr::binarize_white_text(&ocr_image, OCR_BINARIZE_THRESHOLD);
+            match ocr_engine.recognize_text(&binarized) {
                 Ok(text) => {
                     let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
                     let has_tips = normalized.contains("Tips") || normalized.contains("tips");
@@ -977,31 +1333,111 @@ mod platform {
         }
     }
 
-    /// Parse round number from OCR text.
+    /// Scan for round number screens via OCR.
     ///
-    /// Windows OCR often inserts spaces between characters, so we normalize
-    /// by removing spaces before matching. Handles patterns like:
-    /// - "探 検 現 在 の ラ ウ ン ド 20"
-    /// - "探検 現在のラウンド：05"
-    fn parse_round_number(text: &str) -> Option<u32> {
-        // Remove spaces to normalize OCR output
-        let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    /// Checks two transient screens independently of pixel detectors:
+    /// 1. "XX ラウンド終了" — large centered number (1-2 sec display)
+    /// 2. Round selection — "自動周回中" header + round panels (3-5 sec)
+    fn run_round_number_ocr(
+        ocr_engine: &dna_capture::ocr::JapaneseOcrEngine,
+        game_frame: &image::RgbaImage,
+        raw_events: &mut Vec<DetectionEvent>,
+        rois: &dna_detector::config::RoundNumberRoiConfig,
+    ) {
+        use dna_detector::round_number::{
+            is_round_end_text, is_round_select_text, parse, parse_select_header,
+        };
 
-        // Look for digits after "ラウンド" marker
-        let after = normalized.split("ラウンド").nth(1)?;
-
-        // Skip optional colon/full-width colon
-        let after = after
-            .strip_prefix('：')
-            .or_else(|| after.strip_prefix(':'))
-            .unwrap_or(after);
-
-        // Extract only the first consecutive digit sequence
-        let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
-        if digits.is_empty() {
-            return None;
+        // 1. Check for "XX ラウンド終了" screen
+        if let Some(roi_image) = rois.round_end.crop(game_frame) {
+            let binarized =
+                dna_capture::ocr::binarize_white_text(&roi_image, OCR_BINARIZE_THRESHOLD);
+            match ocr_engine.recognize_text(&binarized) {
+                Ok(text) if !text.is_empty() => {
+                    let is_end = is_round_end_text(&text);
+                    let round_num = parse(&text);
+                    debug!(is_end, round_number = ?round_num, ocr_text = %text, "round_end ROI OCR");
+                    if is_end && let Some(num) = round_num {
+                        raw_events.push(DetectionEvent::RoundEndScreen {
+                            round_number: num,
+                            timestamp: Instant::now(),
+                        });
+                    }
+                }
+                Ok(_) => {} // empty text, skip
+                Err(e) => {
+                    debug!(%e, "round_end ROI OCR failed");
+                }
+            }
         }
-        digits.parse().ok()
+
+        // 2. Check for round selection screen via header
+        if let Some(header_image) = rois.select_header.crop(game_frame) {
+            let binarized =
+                dna_capture::ocr::binarize_white_text(&header_image, OCR_BINARIZE_THRESHOLD);
+            match ocr_engine.recognize_text(&binarized) {
+                Ok(header_text) => {
+                    let is_select = is_round_select_text(&header_text);
+                    if !header_text.is_empty() {
+                        debug!(is_select, ocr_text = %header_text, "round_select header ROI OCR");
+                    }
+
+                    if is_select {
+                        // Extract round number from header "自動周回中（X/Y）"
+                        let header_round = parse_select_header(&header_text);
+
+                        // Also try right/left panel OCR
+                        let mut next_round: Option<u32> = None;
+                        let mut completed_round: Option<u32> = None;
+
+                        if let Some(right_image) = rois.select_next_round.crop(game_frame) {
+                            let bin = dna_capture::ocr::binarize_white_text(
+                                &right_image,
+                                OCR_BINARIZE_THRESHOLD,
+                            );
+                            if let Ok(text) = ocr_engine.recognize_text(&bin) {
+                                next_round = parse(&text);
+                                debug!(next_round = ?next_round, ocr_text = %text, "round_select right OCR");
+                            }
+                        }
+
+                        if let Some(left_image) = rois.select_completed_round.crop(game_frame) {
+                            let bin = dna_capture::ocr::binarize_white_text(
+                                &left_image,
+                                OCR_BINARIZE_THRESHOLD,
+                            );
+                            if let Ok(text) = ocr_engine.recognize_text(&bin) {
+                                completed_round = parse(&text);
+                                debug!(completed_round = ?completed_round, ocr_text = %text, "round_select left OCR");
+                            }
+                        }
+
+                        // Use header round as completed_round fallback
+                        if completed_round.is_none() {
+                            completed_round = header_round;
+                        }
+
+                        debug!(
+                            header_round = ?header_round,
+                            next_round = ?next_round,
+                            completed_round = ?completed_round,
+                            "round_select result"
+                        );
+
+                        if next_round.is_some() || completed_round.is_some() {
+                            raw_events.push(DetectionEvent::RoundSelectScreen {
+                                next_round,
+                                completed_round,
+                                timestamp: Instant::now(),
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!(%e, "round_select header ROI OCR failed");
+                }
+            }
+        }
     }
 
     /// Store the frame as `Arc` in shared state (zero-copy move, no clone).

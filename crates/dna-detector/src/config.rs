@@ -95,6 +95,55 @@ pub struct RoundDetectorConfig {
     pub text_left_brightness_min: u8,
 }
 
+/// ROI definitions for round number OCR detection.
+///
+/// These ROIs target two transient screens:
+/// 1. "XX ラウンド終了" — large centered number shown for 1-2 seconds
+/// 2. Round selection screen — shown for 3-5 seconds between rounds
+#[allow(clippy::module_name_repetitions)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoundNumberRoiConfig {
+    /// ROI for the "XX ラウンド終了" screen (number + text).
+    pub round_end: RoiDefinition,
+    /// ROI for "自動周回中（X/5）" header text on the selection screen.
+    pub select_header: RoiDefinition,
+    /// ROI for the next round entry on the right panel (e.g., "02 ラウンド").
+    pub select_next_round: RoiDefinition,
+    /// ROI for the latest completed round on the left panel (e.g., "03 ラウンド").
+    pub select_completed_round: RoiDefinition,
+}
+
+impl Default for RoundNumberRoiConfig {
+    fn default() -> Self {
+        Self {
+            round_end: RoiDefinition {
+                x: 0.35,
+                y: 0.38,
+                width: 0.30,
+                height: 0.18,
+            },
+            select_header: RoiDefinition {
+                x: 0.20,
+                y: 0.06,
+                width: 0.60,
+                height: 0.08,
+            },
+            select_next_round: RoiDefinition {
+                x: 0.50,
+                y: 0.32,
+                width: 0.15,
+                height: 0.12,
+            },
+            select_completed_round: RoiDefinition {
+                x: 0.17,
+                y: 0.28,
+                width: 0.15,
+                height: 0.15,
+            },
+        }
+    }
+}
+
 impl Default for DetectionConfig {
     fn default() -> Self {
         Self {

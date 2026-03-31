@@ -9,5 +9,6 @@ pub mod config;
 pub mod detector;
 pub mod event;
 pub mod roi;
+pub mod round_number;
 pub mod state;
 pub mod titlebar;

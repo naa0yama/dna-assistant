@@ -62,6 +62,11 @@
   background-color: #450a0a;
   color: #ef4444;
 }
+.detector-badge[data-state="disabled"] {
+  background-color: oklch(var(--b3));
+  color: oklch(var(--bc) / 0.25);
+  font-style: italic;
+}
 
 /* Detector badges (Detection page, small) */
 .detector-badge-sm {
@@ -85,11 +90,16 @@
   background-color: #450a0a;
   color: #ef4444;
 }
+.detector-badge-sm[data-state="disabled"] {
+  background-color: oklch(var(--b3));
+  color: oklch(var(--bc) / 0.25);
+  font-style: italic;
+}
 
 /* Log entry row */
 .log-entry {
   display: grid;
-  grid-template-columns: 80px 120px 1fr;
+  grid-template-columns: 80px 60px 120px 40px 1fr;
   gap: 0.5rem;
   padding: 0.25rem;
   font-size: 0.8rem;
@@ -103,8 +113,19 @@
   color: oklch(var(--bc) / 0.35);
   font-size: 0.75rem;
 }
+.log-entry .log-elapsed {
+  font-family: monospace;
+  color: oklch(var(--bc) / 0.35);
+  font-size: 0.75rem;
+}
 .log-entry .log-kind {
   font-size: 0.75rem;
+}
+.log-entry .log-num {
+  font-family: monospace;
+  color: oklch(var(--bc) / 0.5);
+  font-size: 0.75rem;
+  text-align: right;
 }
 .log-entry .log-msg {
   color: oklch(var(--bc) / 0.7);

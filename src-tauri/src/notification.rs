@@ -162,6 +162,9 @@ impl NotificationManager {
                 DetectionEvent::ResultScreenGone { .. } => {
                     self.clear_condition(TriggerKind::ResultScreen);
                 }
+                // Round number events are informational only (no notifications)
+                DetectionEvent::RoundEndScreen { .. }
+                | DetectionEvent::RoundSelectScreen { .. } => {}
             }
         }
 

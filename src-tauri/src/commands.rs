@@ -137,5 +137,13 @@ pub async fn save_settings(
         *guard = config.clone();
     }
     crate::settings::save(&app_handle, &config);
+
+    // If monitoring is active, restart to apply new config
+    let is_active = state.handle.lock().map(|h| h.is_some()).unwrap_or(false);
+    if is_active {
+        monitor::stop(&app_handle, &state);
+        monitor::start(app_handle, &state).map_err(|e| format!("{e:#}"))?;
+    }
+
     Ok(())
 }
