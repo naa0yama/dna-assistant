@@ -6,56 +6,6 @@ use std::time::Instant;
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub enum DetectionEvent {
-    /// Q skill is available (icon visible, not greyed out).
-    SkillReady {
-        /// Ratio of bright icon pixels in the ROI.
-        icon_bright_ratio: f64,
-        /// Maximum brightness in the ROI.
-        max_brightness: u8,
-        /// When this was detected.
-        timestamp: Instant,
-    },
-    /// Q skill is active (SP cost "0" detected via OCR).
-    SkillActive {
-        /// OCR-recognized SP cost text.
-        sp_cost: String,
-        /// When this was detected.
-        timestamp: Instant,
-    },
-    /// Q skill is inactive / on standby (SP cost > 0 detected via OCR).
-    SkillOff {
-        /// OCR-recognized SP cost text.
-        sp_cost: String,
-        /// When this was detected.
-        timestamp: Instant,
-    },
-    /// Q skill icon is greyed out (SP depleted).
-    SkillGreyed {
-        /// Ratio of bright icon pixels in the ROI.
-        icon_bright_ratio: f64,
-        /// Maximum brightness in the ROI.
-        max_brightness: u8,
-        /// When this was detected.
-        timestamp: Instant,
-    },
-    /// An ally's HP is critically low.
-    AllyHpLow {
-        /// Which ally (0-indexed).
-        ally_index: u8,
-        /// Remaining HP ratio (0.0..=1.0).
-        hp_ratio: f64,
-        /// When this was detected.
-        timestamp: Instant,
-    },
-    /// An ally's HP has recovered above the critical threshold.
-    AllyHpNormal {
-        /// Which ally (0-indexed).
-        ally_index: u8,
-        /// Current HP ratio (0.0..=1.0).
-        hp_ratio: f64,
-        /// When this was detected.
-        timestamp: Instant,
-    },
     /// Round text is visible with a detected round number.
     RoundVisible {
         /// Whether round text presence was detected via pixel density.
@@ -76,6 +26,15 @@ pub enum DetectionEvent {
     },
     /// A dialog box (e.g., network error "Tips") is visible on screen.
     DialogVisible {
+        /// Low-chroma text pixel ratio in the text ROI.
+        text_ratio: f64,
+        /// Dark pixel ratio in the background ROI.
+        bg_dark_ratio: f64,
+        /// When this was detected.
+        timestamp: Instant,
+    },
+    /// No dialog box detected.
+    DialogGone {
         /// Low-chroma text pixel ratio in the text ROI.
         text_ratio: f64,
         /// Dark pixel ratio in the background ROI.
@@ -108,15 +67,6 @@ pub enum DetectionEvent {
         next_round: Option<u32>,
         /// Latest completed round from left panel (1-99).
         completed_round: Option<u32>,
-        /// When this was detected.
-        timestamp: Instant,
-    },
-    /// No dialog box detected.
-    DialogGone {
-        /// Low-chroma text pixel ratio in the text ROI.
-        text_ratio: f64,
-        /// Dark pixel ratio in the background ROI.
-        bg_dark_ratio: f64,
         /// When this was detected.
         timestamp: Instant,
     },

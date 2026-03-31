@@ -149,9 +149,14 @@ pub async fn save_settings(
     Ok(())
 }
 
-/// Send a test toast notification.
+/// Send a test notification (Discord or Windows toast depending on config).
 #[tauri::command]
 #[instrument(skip_all)]
-pub fn test_notification() {
-    NotificationManager::send_test_notification();
+#[allow(clippy::needless_pass_by_value)]
+pub fn test_notification(state: State<'_, MonitorState>) {
+    let config = state
+        .config
+        .lock()
+        .map_or_else(|_| MonitorConfig::default(), |c| c.clone());
+    NotificationManager::send_test_notification(&config);
 }

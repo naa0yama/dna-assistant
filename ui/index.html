@@ -39,6 +39,14 @@
         <span class="nav-label">Settings</span>
       </a>
     </nav>
+    <!-- Discord toggle (bottom) -->
+    <div class="mt-auto px-2 pb-3">
+      <label class="nav-item flex items-center gap-2 cursor-pointer" title="Send notifications via Discord webhook">
+        <input type="checkbox" class="toggle toggle-sm toggle-accent" id="discord-toggle">
+        <span class="nav-icon">&#x1F4AC;</span>
+        <span class="nav-label">Discord</span>
+      </label>
+    </div>
   </aside>
 
   <!-- Main content -->
@@ -85,8 +93,8 @@
           <span class="text-xs text-base-content/50 font-semibold uppercase mb-1">Detectors</span>
           <div class="grid grid-cols-3 gap-3">
             <div class="text-center">
-              <div class="text-xs text-base-content/50 mb-1">Skill</div>
-              <div class="detector-badge" id="det-skill" data-state="unknown">--</div>
+              <div class="text-xs text-base-content/50 mb-1">Round Trip</div>
+              <div class="detector-badge" id="det-roundtrip" data-state="unknown">--</div>
             </div>
             <div class="text-center">
               <div class="text-xs text-base-content/50 mb-1">Round</div>
@@ -170,12 +178,6 @@
             <span>Last Changed</span>
           </div>
           <div id="detector-table">
-            <div class="grid grid-cols-[140px_80px_160px_100px] gap-2 px-1 py-1.5 text-sm border-b border-base-200">
-              <span class="text-base-content/80">SkillDetector</span>
-              <span><span class="detector-badge-sm" id="det-skill-full" data-state="unknown">--</span></span>
-              <span class="text-xs font-mono text-base-content/40">x=0.878 y=0.880</span>
-              <span class="text-xs font-mono text-base-content/40" id="det-skill-time">--</span>
-            </div>
             <div class="grid grid-cols-[140px_80px_160px_100px] gap-2 px-1 py-1.5 text-sm bg-base-200/30 border-b border-base-200">
               <span class="text-base-content/80">RoundDetector</span>
               <span><span class="detector-badge-sm" id="det-round-full" data-state="unknown">--</span></span>
@@ -245,10 +247,6 @@
           <span class="text-xs text-base-content/50 font-semibold uppercase mb-2">Detection</span>
           <div class="grid grid-cols-3 gap-x-6 gap-y-3 mb-3">
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="skill_enabled">
-              <span class="label-text text-xs">Skill detector</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="round_enabled">
               <span class="label-text text-xs">Round detector</span>
             </label>
@@ -258,10 +256,6 @@
             </label>
           </div>
           <div class="grid grid-cols-2 gap-x-6 gap-y-3">
-            <label class="form-control">
-              <div class="label py-0"><span class="label-text text-xs">Round transition suppress (sec)</span></div>
-              <input type="number" min="0" max="60" step="1" class="input input-bordered input-sm" data-key="round_transition_suppress">
-            </label>
             <label class="form-control">
               <div class="label py-0"><span class="label-text text-xs">Confirmation window (sec)</span></div>
               <input type="number" min="0.5" max="10" step="0.5" class="input input-bordered input-sm" data-key="confirmation_window">
@@ -274,6 +268,41 @@
         </div>
       </div>
 
+      <!-- RoundTrip -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-4">
+          <span class="text-xs text-base-content/50 font-semibold uppercase mb-2">RoundTrip</span>
+          <div class="grid grid-cols-3 gap-x-6 gap-y-3">
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs text-success">Green (sec)</span></div>
+              <input type="number" min="10" max="600" step="5" class="input input-bordered input-sm" data-key="roundtrip_green">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs text-warning">Yellow (sec)</span></div>
+              <input type="number" min="10" max="600" step="5" class="input input-bordered input-sm" data-key="roundtrip_yellow">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs text-error">Red (sec)</span></div>
+              <input type="number" min="10" max="600" step="5" class="input input-bordered input-sm" data-key="roundtrip_red">
+            </label>
+          </div>
+          <div class="grid grid-cols-3 gap-x-6 gap-y-3 mt-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-success" data-key="notify_roundtrip_green">
+              <span class="label-text text-xs">Notify Green</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-warning" data-key="notify_roundtrip_yellow">
+              <span class="label-text text-xs">Notify Yellow</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-error" data-key="notify_roundtrip_red">
+              <span class="label-text text-xs">Notify Red</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
       <!-- Notifications -->
       <div class="card bg-base-100 shadow-md">
         <div class="card-body p-4">
@@ -281,15 +310,10 @@
             <span class="text-xs text-base-content/50 font-semibold uppercase">Notifications</span>
             <button class="btn btn-warning btn-xs" id="test-notification-btn">Test Notification</button>
           </div>
-          <!-- Master toggle + Per-event toggles + Game focus suppress -->
           <div class="grid grid-cols-3 gap-x-6 gap-y-3 mb-3">
             <label class="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notifications_enabled">
               <span class="label-text text-xs">Enable notifications</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notify_skill_enabled">
-              <span class="label-text text-xs">Skill</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notify_round_enabled">
@@ -300,10 +324,6 @@
               <span class="label-text text-xs">Dialog</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notify_ally_hp_enabled">
-              <span class="label-text text-xs">Ally HP</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" class="toggle toggle-sm toggle-primary" data-key="notify_result_enabled">
               <span class="label-text text-xs">Result Screen</span>
             </label>
@@ -312,15 +332,22 @@
               <span class="label-text text-xs">Suppress when game focused</span>
             </label>
           </div>
+          <!-- Discord webhook -->
+          <div class="grid grid-cols-[1fr_auto] gap-x-3 mb-3">
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Discord Webhook URL</span></div>
+              <input type="text" placeholder="https://discord.com/api/webhooks/..." class="input input-bordered input-sm" data-key="discord_webhook_url">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">Mention ID</span></div>
+              <input type="text" placeholder="123456789012345678" class="input input-bordered input-sm w-48" data-key="discord_mention_id">
+            </label>
+          </div>
           <!-- Timing settings -->
           <div class="grid grid-cols-2 gap-x-6 gap-y-3">
             <label class="form-control">
               <div class="label py-0"><span class="label-text text-xs">Notification cooldown (sec)</span></div>
               <input type="number" min="5" max="300" step="5" class="input input-bordered input-sm" data-key="notification_cooldown">
-            </label>
-            <label class="form-control">
-              <div class="label py-0"><span class="label-text text-xs">Skill sustain (sec)</span></div>
-              <input type="number" min="1" max="30" step="1" class="input input-bordered input-sm" data-key="notify_skill_sustain">
             </label>
             <label class="form-control">
               <div class="label py-0"><span class="label-text text-xs">Dialog sustain (sec)</span></div>
@@ -333,10 +360,6 @@
             <label class="form-control">
               <div class="label py-0"><span class="label-text text-xs">Round cooldown (sec)</span></div>
               <input type="number" min="5" max="120" step="5" class="input input-bordered input-sm" data-key="notify_round_cooldown">
-            </label>
-            <label class="form-control">
-              <div class="label py-0"><span class="label-text text-xs">Ally HP sustain (sec)</span></div>
-              <input type="number" min="1" max="60" step="1" class="input input-bordered input-sm" data-key="notify_ally_hp_sustain">
             </label>
           </div>
         </div>

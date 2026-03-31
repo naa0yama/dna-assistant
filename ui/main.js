@@ -20,7 +20,7 @@ const clearLogBtn = document.getElementById("clear-log-btn");
 const eventLog = document.getElementById("event-log");
 
 // Main page detector badges
-const detSkill = document.getElementById("det-skill");
+const detRoundtrip = document.getElementById("det-roundtrip");
 const detRound = document.getElementById("det-round");
 const detDialog = document.getElementById("det-dialog");
 
@@ -32,10 +32,8 @@ const eventLogFull = document.getElementById("event-log-full");
 const capWindow = document.getElementById("cap-window");
 const capSize = document.getElementById("cap-size");
 const capBackend = document.getElementById("cap-backend");
-const detSkillFull = document.getElementById("det-skill-full");
 const detRoundFull = document.getElementById("det-round-full");
 const detDialogFull = document.getElementById("det-dialog-full");
-const detSkillTime = document.getElementById("det-skill-time");
 const detRoundTime = document.getElementById("det-round-time");
 const detDialogTime = document.getElementById("det-dialog-time");
 
@@ -109,18 +107,25 @@ function updateStatusUI(status) {
 
 // --- Detector state tracking ---
 const detectorState = {
-  skill: { state: "unknown", label: "--", time: null },
   round: { state: "unknown", label: "--", time: null },
   dialog: { state: "unknown", label: "--", time: null },
 };
 
 // --- Detector enabled state ---
-const detectorEnabled = { skill: true, round: true, dialog: true };
+const detectorEnabled = { round: true, dialog: true };
+
+// --- RoundTrip state ---
+let roundtripStartTime = null;
+let roundtripTimerId = null;
+let roundtripConfig = { green: 60, yellow: 120, red: 180 };
 
 function updateDetectorEnabledState(config) {
-  detectorEnabled.skill = config.skill_enabled !== false;
   detectorEnabled.round = config.round_enabled !== false;
   detectorEnabled.dialog = config.dialog_enabled !== false;
+  // Cache RoundTrip thresholds
+  roundtripConfig.green = config.roundtrip_green || 60;
+  roundtripConfig.yellow = config.roundtrip_yellow || 120;
+  roundtripConfig.red = config.roundtrip_red || 180;
   syncDetectorUI();
 }
 
@@ -129,14 +134,47 @@ function updateDetectorBadge(el, state, label) {
   el.textContent = label;
 }
 
+function formatElapsed(secs) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return m > 0 ? m + "m " + String(s).padStart(2, "0") + "s" : s + "s";
+}
+
+function getRoundtripState(secs) {
+  if (secs >= roundtripConfig.yellow) return "alert";
+  if (secs >= roundtripConfig.green) return "warn";
+  return "ok";
+}
+
+function updateRoundtripBadge() {
+  if (roundtripStartTime == null) return;
+  const secs = (Date.now() - roundtripStartTime) / 1000;
+  const state = getRoundtripState(secs);
+  updateDetectorBadge(detRoundtrip, state, formatElapsed(secs));
+}
+
+function startRoundtripTimer() {
+  roundtripStartTime = Date.now();
+  if (roundtripTimerId) clearInterval(roundtripTimerId);
+  roundtripTimerId = setInterval(updateRoundtripBadge, 1000);
+  updateRoundtripBadge();
+}
+
+function stopRoundtripTimer(elapsedSecs) {
+  if (roundtripTimerId) {
+    clearInterval(roundtripTimerId);
+    roundtripTimerId = null;
+  }
+  if (elapsedSecs != null) {
+    const state = getRoundtripState(elapsedSecs);
+    updateDetectorBadge(detRoundtrip, state, formatElapsed(elapsedSecs));
+  }
+  roundtripStartTime = null;
+}
+
 function syncDetectorUI() {
   const s = detectorState;
   // Main page badges
-  if (detectorEnabled.skill) {
-    updateDetectorBadge(detSkill, s.skill.state, s.skill.label);
-  } else {
-    updateDetectorBadge(detSkill, "disabled", "Disabled");
-  }
   if (detectorEnabled.round) {
     updateDetectorBadge(detRound, s.round.state, s.round.label);
   } else {
@@ -148,11 +186,6 @@ function syncDetectorUI() {
     updateDetectorBadge(detDialog, "disabled", "Disabled");
   }
   // Detection page badges
-  if (detectorEnabled.skill) {
-    updateDetectorBadge(detSkillFull, s.skill.state, s.skill.label);
-  } else {
-    updateDetectorBadge(detSkillFull, "disabled", "Disabled");
-  }
   if (detectorEnabled.round) {
     updateDetectorBadge(detRoundFull, s.round.state, s.round.label);
   } else {
@@ -164,25 +197,20 @@ function syncDetectorUI() {
     updateDetectorBadge(detDialogFull, "disabled", "Disabled");
   }
   // Detection page times
-  detSkillTime.textContent = s.skill.time || "--";
   detRoundTime.textContent = s.round.time || "--";
   detDialogTime.textContent = s.dialog.time || "--";
 }
 
-function updateDetectorFromEvent(kind) {
+function updateDetectorFromEvent(kind, elapsedSecs) {
   const now = new Date().toLocaleTimeString("ja-JP", { hour12: false });
   switch (kind) {
-    case "SkillReady":
-      detectorState.skill = { state: "ok", label: "Ready", time: now };
-      break;
-    case "SkillGreyed":
-      detectorState.skill = { state: "warn", label: "Greyed", time: now };
-      break;
     case "RoundVisible":
       detectorState.round = { state: "ok", label: "Visible", time: now };
+      startRoundtripTimer();
       break;
     case "RoundGone":
       detectorState.round = { state: "unknown", label: "Gone", time: now };
+      stopRoundtripTimer(elapsedSecs);
       break;
     case "DialogVisible":
       detectorState.dialog = { state: "alert", label: "Visible", time: now };
@@ -249,9 +277,9 @@ listen("monitor-status", (event) => {
 });
 
 listen("detection-event", (event) => {
-  const { kind, detail, round_number, elapsed } = event.payload;
+  const { kind, detail, round_number, elapsed, elapsed_secs } = event.payload;
   addLogEntry(kind, detail, round_number, elapsed);
-  updateDetectorFromEvent(kind);
+  updateDetectorFromEvent(kind, elapsed_secs);
 });
 
 // --- Capture preview (Detection page) ---
@@ -339,6 +367,10 @@ const MS_KEYS = new Set([
   "capture_interval", "window_search_interval", "preview_interval",
 ]);
 const INT_KEYS = new Set(["max_capture_retries"]);
+const STRING_KEYS = new Set(["discord_webhook_url", "discord_mention_id"]);
+
+// Sidebar Discord toggle (outside settings form)
+const discordToggle = document.getElementById("discord-toggle");
 
 function collectSettings() {
   const config = {};
@@ -346,6 +378,8 @@ function collectSettings() {
     const key = input.dataset.key;
     if (input.type === "checkbox") {
       config[key] = input.checked;
+    } else if (STRING_KEYS.has(key)) {
+      config[key] = input.value;
     } else {
       const val = parseFloat(input.value);
       if (INT_KEYS.has(key) || MS_KEYS.has(key)) {
@@ -355,6 +389,8 @@ function collectSettings() {
       }
     }
   }
+  // Sync discord_enabled from sidebar toggle
+  config.discord_enabled = discordToggle.checked;
   return config;
 }
 
@@ -363,6 +399,8 @@ async function loadSettings() {
     const config = await invoke("get_settings");
     populateSettings(config);
     updateDetectorEnabledState(config);
+    // Sync sidebar Discord toggle
+    discordToggle.checked = config.discord_enabled || false;
   } catch (e) {
     console.error("get_settings failed:", e);
   }
@@ -404,6 +442,20 @@ testNotificationBtn.addEventListener("click", async () => {
   }
 });
 
+// --- Sidebar Discord toggle auto-save ---
+discordToggle.addEventListener("change", async () => {
+  try {
+    const config = await invoke("get_settings");
+    config.discord_enabled = discordToggle.checked;
+    await invoke("save_settings", { config });
+  } catch (e) {
+    console.error("discord toggle save failed:", e);
+  }
+});
+
 // --- Initial status ---
 invoke("get_status").then(updateStatusUI).catch(console.error);
-invoke("get_settings").then(updateDetectorEnabledState).catch(console.error);
+invoke("get_settings").then((config) => {
+  updateDetectorEnabledState(config);
+  discordToggle.checked = config.discord_enabled || false;
+}).catch(console.error);

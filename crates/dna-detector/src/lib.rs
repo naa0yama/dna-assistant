@@ -1,7 +1,7 @@
 //! Cross-platform detection logic for DNA Online assistant.
 //!
 //! Analyzes captured game frames to detect state changes:
-//! round completion, skill activation, and ally HP status.
+//! round completion, dialog detection, and round number extraction.
 //! All logic is platform-independent — only requires `image::RgbaImage` as input.
 
 pub mod color;

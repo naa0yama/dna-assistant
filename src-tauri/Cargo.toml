@@ -35,6 +35,8 @@ dna-capture = { path = "../crates/dna-capture" }
 dna-detector = { path = "../crates/dna-detector" }
 image = { workspace = true }
 notify-rust = "4"
+reqwest = { workspace = true, features = ["blocking", "multipart"] }
+rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { version = "2", features = ["devtools", "test"] }

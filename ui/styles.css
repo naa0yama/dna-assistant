@@ -132,12 +132,8 @@
 }
 
 /* Kind-specific colors */
-.log-kind[data-kind="SkillReady"],
 .log-kind[data-kind="RoundVisible"] {
   color: #52b788;
-}
-.log-kind[data-kind="SkillGreyed"] {
-  color: #f59e0b;
 }
 .log-kind[data-kind="DialogVisible"] {
   color: #ef4444;

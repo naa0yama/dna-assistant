@@ -45,8 +45,6 @@ use dna_detector::detector::dialog::DialogDetector;
 #[cfg(target_os = "windows")]
 use dna_detector::detector::round::RoundDetector;
 #[cfg(target_os = "windows")]
-use dna_detector::detector::skill::SkillDetector;
-#[cfg(target_os = "windows")]
 use dna_detector::event::DetectionEvent;
 #[cfg(target_os = "windows")]
 use dna_detector::titlebar::crop_titlebar;
@@ -79,15 +77,9 @@ pub struct MonitorConfig {
     /// Detection page preview refresh interval (ms).
     #[serde(with = "serde_duration_ms")]
     pub preview_interval: Duration,
-    /// Duration to suppress Skill events after `RoundGone` (sec).
-    #[serde(with = "serde_duration_secs")]
-    pub round_transition_suppress: Duration,
     /// Cooldown between duplicate notifications (sec).
     #[serde(with = "serde_duration_secs")]
     pub notification_cooldown: Duration,
-    /// Sustain for `SkillGreyed` before notification (sec).
-    #[serde(with = "serde_duration_secs")]
-    pub notify_skill_sustain: Duration,
     /// Sustain for `DialogVisible` before notification (sec).
     #[serde(with = "serde_duration_secs")]
     pub notify_dialog_sustain: Duration,
@@ -95,15 +87,8 @@ pub struct MonitorConfig {
     #[serde(with = "serde_duration_secs")]
     pub notify_round_sustain: Duration,
     /// Cooldown between repeated round-completion notifications (sec).
-    /// Shorter than `notification_cooldown` because each round matters.
     #[serde(with = "serde_duration_secs")]
     pub notify_round_cooldown: Duration,
-    /// Sustain for `AllyHpLow` before notification (sec).
-    #[serde(with = "serde_duration_secs")]
-    pub notify_ally_hp_sustain: Duration,
-    /// Whether the Skill detector is enabled.
-    #[serde(default = "default_true")]
-    pub skill_enabled: bool,
     /// Whether the Round detector is enabled.
     #[serde(default = "default_true")]
     pub round_enabled: bool,
@@ -119,24 +104,45 @@ pub struct MonitorConfig {
     /// Master toggle for all notifications.
     #[serde(default = "default_true")]
     pub notifications_enabled: bool,
-    /// Whether to notify on `SkillGreyed` events.
-    #[serde(default = "default_true")]
-    pub notify_skill_enabled: bool,
     /// Whether to notify on `RoundGone` events.
     #[serde(default = "default_true")]
     pub notify_round_enabled: bool,
     /// Whether to notify on `DialogVisible` events.
     #[serde(default = "default_true")]
     pub notify_dialog_enabled: bool,
-    /// Whether to notify on `AllyHpLow` events.
-    #[serde(default = "default_true")]
-    pub notify_ally_hp_enabled: bool,
     /// Whether to notify on `ResultScreen` events.
     #[serde(default = "default_true")]
     pub notify_result_enabled: bool,
+    /// `RoundTrip` Green threshold (sec). Below = normal.
+    #[serde(default = "default_roundtrip_green", with = "serde_duration_secs")]
+    pub roundtrip_green: Duration,
+    /// `RoundTrip` Yellow threshold (sec). Above Green = warning.
+    #[serde(default = "default_roundtrip_yellow", with = "serde_duration_secs")]
+    pub roundtrip_yellow: Duration,
+    /// `RoundTrip` Red threshold (sec). Above Yellow = alert.
+    #[serde(default = "default_roundtrip_red", with = "serde_duration_secs")]
+    pub roundtrip_red: Duration,
+    /// Notify when `RoundTrip` exceeds Green threshold.
+    #[serde(default)]
+    pub notify_roundtrip_green: bool,
+    /// Notify when `RoundTrip` exceeds Yellow threshold.
+    #[serde(default)]
+    pub notify_roundtrip_yellow: bool,
+    /// Notify when `RoundTrip` exceeds Red threshold.
+    #[serde(default = "default_true")]
+    pub notify_roundtrip_red: bool,
     /// Suppress notifications when the game window is the foreground window.
     #[serde(default)]
     pub suppress_when_game_focused: bool,
+    /// Send notifications via Discord webhook instead of Windows toast.
+    #[serde(default)]
+    pub discord_enabled: bool,
+    /// Discord webhook URL for notifications.
+    #[serde(default)]
+    pub discord_webhook_url: String,
+    /// Discord user/role ID for mentions (e.g., "123456789012345678").
+    #[serde(default)]
+    pub discord_mention_id: String,
 }
 
 #[cfg(target_os = "windows")]
@@ -147,6 +153,21 @@ const fn default_true() -> bool {
 #[cfg(target_os = "windows")]
 const fn default_confirmation_window() -> Duration {
     Duration::from_secs(3)
+}
+
+#[cfg(target_os = "windows")]
+const fn default_roundtrip_green() -> Duration {
+    Duration::from_secs(60)
+}
+
+#[cfg(target_os = "windows")]
+const fn default_roundtrip_yellow() -> Duration {
+    Duration::from_secs(120)
+}
+
+#[cfg(target_os = "windows")]
+const fn default_roundtrip_red() -> Duration {
+    Duration::from_secs(180)
 }
 
 #[cfg(target_os = "windows")]
@@ -161,26 +182,29 @@ impl Default for MonitorConfig {
             capture_interval: Duration::from_millis(200),
             window_search_interval: Duration::from_millis(3000),
             max_capture_retries: 3,
-            preview_interval: Duration::from_millis(3000),
-            round_transition_suppress: Duration::from_secs(10),
+            preview_interval: Duration::from_millis(200),
             notification_cooldown: Duration::from_secs(60),
-            notify_skill_sustain: Duration::from_secs(5),
             notify_dialog_sustain: Duration::from_secs(3),
             notify_round_sustain: Duration::from_secs(5),
             notify_round_cooldown: Duration::from_secs(10),
-            notify_ally_hp_sustain: Duration::from_secs(10),
-            skill_enabled: true,
             round_enabled: true,
             dialog_enabled: true,
             confirmation_window: Duration::from_secs(3),
             confirmation_ratio: 0.80,
             notifications_enabled: true,
-            notify_skill_enabled: true,
             notify_round_enabled: true,
             notify_dialog_enabled: true,
-            notify_ally_hp_enabled: true,
             notify_result_enabled: true,
+            roundtrip_green: Duration::from_secs(60),
+            roundtrip_yellow: Duration::from_secs(120),
+            roundtrip_red: Duration::from_secs(180),
+            notify_roundtrip_green: false,
+            notify_roundtrip_yellow: false,
+            notify_roundtrip_red: true,
             suppress_when_game_focused: false,
+            discord_enabled: false,
+            discord_webhook_url: String::new(),
+            discord_mention_id: String::new(),
         }
     }
 }
@@ -298,7 +322,7 @@ impl Default for MonitorStatus {
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Serialize)]
 pub struct DetectionEventPayload {
-    /// Event kind (e.g., "`SkillGreyed`", "`RoundVisible`").
+    /// Event kind (e.g., "`RoundVisible`", "`DialogVisible`").
     pub kind: String,
     /// Human-readable detail.
     pub detail: String,
@@ -306,6 +330,8 @@ pub struct DetectionEventPayload {
     pub round_number: Option<u32>,
     /// Elapsed time for the current round (e.g., "1m 23s").
     pub elapsed: Option<String>,
+    /// Elapsed time in seconds (for frontend threshold comparison).
+    pub elapsed_secs: Option<f64>,
 }
 
 // --- Windows-only: monitor loop, TransitionFilter, and helpers ---
@@ -315,15 +341,13 @@ mod platform {
 
     /// Detector state category for transition tracking.
     ///
-    /// Each detector produces two complementary event kinds (e.g., `SkillReady` /
-    /// `SkillGreyed`). We track the last-seen kind per category and only forward
+    /// Each detector produces two complementary event kinds (e.g., `RoundVisible` /
+    /// `RoundGone`). We track the last-seen kind per category and only forward
     /// events to the UI and notification manager when the kind changes.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum DetectorCategory {
-        Skill,
         Round,
         Dialog,
-        AllyHp,
         ResultScreen,
         RoundNumber,
     }
@@ -333,67 +357,32 @@ mod platform {
     /// Uses a sliding-window approach: a new state must appear in at least
     /// `confirmation_ratio` of the last `window_size` frames before being
     /// confirmed. This tolerates occasional OCR/detection noise.
-    /// Also suppresses Skill detector flapping during round transitions.
     #[derive(Debug)]
     struct TransitionFilter {
         /// Confirmed state per category.
-        state: [Option<&'static str>; 6],
+        state: [Option<&'static str>; 4],
         /// Sliding window of recent event kinds per category.
-        history: [std::collections::VecDeque<&'static str>; 6],
+        history: [std::collections::VecDeque<&'static str>; 4],
         /// Number of frames in the sliding window.
         window_size: usize,
         /// Ratio threshold (0.0-1.0) for confirmation.
         confirmation_ratio: f64,
-        /// When `RoundGone` was last seen (for skill suppression).
-        round_gone_at: Option<Instant>,
-        /// Duration to suppress skill events after round transition.
-        round_transition_suppress: Duration,
     }
 
     impl TransitionFilter {
-        fn new(
-            round_transition_suppress: Duration,
-            window_size: usize,
-            confirmation_ratio: f64,
-        ) -> Self {
+        fn new(window_size: usize, confirmation_ratio: f64) -> Self {
             Self {
-                state: [None; 6],
+                state: [None; 4],
                 history: std::array::from_fn(|_| {
                     std::collections::VecDeque::with_capacity(window_size)
                 }),
                 window_size,
                 confirmation_ratio,
-                round_gone_at: None,
-                round_transition_suppress,
             }
         }
 
         /// Returns `true` if this event represents a confirmed state change.
         fn is_transition(&mut self, event: &DetectionEvent) -> bool {
-            let now = Instant::now();
-
-            // Track RoundGone timing
-            if matches!(event, DetectionEvent::RoundGone { .. }) {
-                self.round_gone_at = Some(now);
-            }
-            if matches!(event, DetectionEvent::RoundVisible { .. }) {
-                self.round_gone_at = None;
-            }
-
-            // Suppress Skill flapping during round transition
-            if matches!(
-                event,
-                DetectionEvent::SkillGreyed { .. }
-                    | DetectionEvent::SkillReady { .. }
-                    | DetectionEvent::SkillActive { .. }
-                    | DetectionEvent::SkillOff { .. }
-            ) && self
-                .round_gone_at
-                .is_some_and(|t| now.duration_since(t) < self.round_transition_suppress)
-            {
-                return false;
-            }
-
             // Round number events are internal-only (update round state
             // but don't appear in the UI event log). Always suppress here.
             if matches!(
@@ -455,18 +444,11 @@ mod platform {
     /// Map a detection event to its detector category.
     const fn categorize(event: &DetectionEvent) -> DetectorCategory {
         match event {
-            DetectionEvent::SkillReady { .. }
-            | DetectionEvent::SkillActive { .. }
-            | DetectionEvent::SkillOff { .. }
-            | DetectionEvent::SkillGreyed { .. } => DetectorCategory::Skill,
             DetectionEvent::RoundVisible { .. } | DetectionEvent::RoundGone { .. } => {
                 DetectorCategory::Round
             }
             DetectionEvent::DialogVisible { .. } | DetectionEvent::DialogGone { .. } => {
                 DetectorCategory::Dialog
-            }
-            DetectionEvent::AllyHpLow { .. } | DetectionEvent::AllyHpNormal { .. } => {
-                DetectorCategory::AllyHp
             }
             DetectionEvent::ResultScreenVisible { .. }
             | DetectionEvent::ResultScreenGone { .. } => DetectorCategory::ResultScreen,
@@ -624,6 +606,7 @@ mod platform {
     ) {
         let det_config = DetectionConfig::default();
         let mut notification_mgr = NotificationManager::new(&monitor_config);
+        notification_mgr.set_latest_frame(latest_frame.clone());
         // Compute window size: confirmation_window / capture_interval, at least 1
         let window_size = monitor_config
             .confirmation_window
@@ -638,11 +621,8 @@ mod platform {
             confirmation_ratio = monitor_config.confirmation_ratio,
             "transition filter: sliding window"
         );
-        let mut transition_filter = TransitionFilter::new(
-            monitor_config.round_transition_suppress,
-            window_size,
-            monitor_config.confirmation_ratio,
-        );
+        let mut transition_filter =
+            TransitionFilter::new(window_size, monitor_config.confirmation_ratio);
 
         // Round state tracking
         let mut current_round: Option<u32> = None;
@@ -657,11 +637,8 @@ mod platform {
 
         // Build detectors.
         // All detectors call analyze() directly. TransitionFilter handles
-        // state-change deduplication, and round_transition_suppress handles
-        // skill flapping during screen transitions.
-        // AllyHpDetector is excluded (unverified placeholder config).
+        // state-change deduplication.
         let round_number_rois = dna_detector::config::RoundNumberRoiConfig::default();
-        let skill_detector = SkillDetector::new(det_config.skill);
         let round_detector = RoundDetector::new(det_config.round);
         let dialog_detector = DialogDetector::new(det_config.dialog);
 
@@ -783,9 +760,6 @@ mod platform {
 
                 // Run pixel detectors (skip disabled ones)
                 let mut raw_events: Vec<DetectionEvent> = Vec::new();
-                if monitor_config.skill_enabled {
-                    raw_events.extend(skill_detector.analyze(&game_frame));
-                }
                 if monitor_config.round_enabled {
                     raw_events.extend(round_detector.analyze(&game_frame));
                 }
@@ -833,6 +807,7 @@ mod platform {
 
                 // Notification uses raw events (needs sustained-condition tracking)
                 if !raw_events.is_empty() {
+                    notification_mgr.set_current_round(current_round);
                     notification_mgr.process_events(&raw_events);
                 }
 
@@ -858,6 +833,8 @@ mod platform {
                     // Emit transitions to frontend
                     for event in &transition_events {
                         let mut elapsed = None;
+                        #[allow(unused_mut)]
+                        let mut elapsed_duration: Option<Duration> = None;
 
                         match event {
                             DetectionEvent::RoundVisible { .. } => {
@@ -870,8 +847,14 @@ mod platform {
                             }
                             DetectionEvent::RoundGone { .. } => {
                                 // Calculate elapsed time for this round
-                                elapsed = round_start.map(|start| format_elapsed(start.elapsed()));
+                                let elapsed_duration = round_start.map(|s| s.elapsed());
+                                elapsed = elapsed_duration.map(format_elapsed);
                                 round_start = None;
+
+                                // Check RoundTrip threshold notifications
+                                if let Some(dur) = elapsed_duration {
+                                    notification_mgr.notify_roundtrip(dur);
+                                }
 
                                 // Resolve completed round number from OCR sources
                                 let completed = resolve_round_number(
@@ -898,6 +881,7 @@ mod platform {
                             kind: event_kind_name(event).into(),
                             detail: event_description(event),
                             round_number: current_round,
+                            elapsed_secs: elapsed_duration.map(|d| d.as_secs_f64()),
                             elapsed,
                         };
                         let _ = app_handle.emit("detection-event", &payload);
@@ -965,12 +949,6 @@ mod platform {
     /// Get a short kind name for a detection event.
     const fn event_kind_name(event: &DetectionEvent) -> &'static str {
         match event {
-            DetectionEvent::SkillReady { .. } => "SkillReady",
-            DetectionEvent::SkillActive { .. } => "SkillActive",
-            DetectionEvent::SkillOff { .. } => "SkillOff",
-            DetectionEvent::SkillGreyed { .. } => "SkillGreyed",
-            DetectionEvent::AllyHpLow { .. } => "AllyHpLow",
-            DetectionEvent::AllyHpNormal { .. } => "AllyHpNormal",
             DetectionEvent::RoundVisible { .. } => "RoundVisible",
             DetectionEvent::RoundGone { .. } => "RoundGone",
             DetectionEvent::ResultScreenVisible { .. } => "ResultScreenVisible",
@@ -1102,44 +1080,16 @@ mod platform {
     /// Get a human-readable description for a detection event.
     fn event_description(event: &DetectionEvent) -> String {
         match event {
-            DetectionEvent::SkillReady { .. } => String::from("Q スキル使用可能"),
-            DetectionEvent::SkillActive { sp_cost, .. } => {
-                format!("Q スキル発動中 (SP:{sp_cost})")
-            }
-            DetectionEvent::SkillOff { sp_cost, .. } => {
-                format!("Q スキル未発動 (SP:{sp_cost})")
-            }
-            DetectionEvent::SkillGreyed { .. } => String::from("Q スキル SP 枯渇"),
-            DetectionEvent::AllyHpLow { ally_index, .. } => {
-                format!("味方 {ally_index} HP 低下")
-            }
-            DetectionEvent::AllyHpNormal { ally_index, .. } => {
-                format!("味方 {ally_index} HP 回復")
-            }
-            DetectionEvent::RoundVisible {
-                round_number: Some(n),
-                ..
-            } => {
-                format!("ラウンド {n} 進行中")
-            }
             DetectionEvent::RoundVisible { .. } => String::from("ラウンド進行中"),
             DetectionEvent::RoundGone { .. } => String::from("ラウンド完了"),
             DetectionEvent::ResultScreenVisible { .. } => String::from("依頼完了 (リザルト)"),
             DetectionEvent::ResultScreenGone { .. } => String::from("リザルト終了"),
             DetectionEvent::DialogVisible { .. } => String::from("ダイアログ表示"),
             DetectionEvent::DialogGone { .. } => String::from("ダイアログ消失"),
-            DetectionEvent::RoundEndScreen { round_number, .. } => {
-                format!("ラウンド {round_number:02} 終了")
+            // Internal-only events (not shown in UI)
+            DetectionEvent::RoundEndScreen { .. } | DetectionEvent::RoundSelectScreen { .. } => {
+                String::new()
             }
-            DetectionEvent::RoundSelectScreen {
-                next_round,
-                completed_round,
-                ..
-            } => match (next_round, completed_round) {
-                (Some(next), _) => format!("次のラウンド: {next:02}"),
-                (None, Some(done)) => format!("完了ラウンド: {done:02}"),
-                _ => String::from("ラウンド選択画面"),
-            },
         }
     }
 
@@ -1147,7 +1097,6 @@ mod platform {
     ///
     /// - When `RoundVisible`: OCR the round text ROI to extract round number.
     /// - When `RoundGone`: OCR the result text area for "依頼完了" confirmation.
-    /// - When `SkillReady`: OCR the skill area for SP cost to determine ON ("0") vs OFF.
     /// - When `DialogVisible`: OCR the dialog area for "Tips" title confirmation.
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     fn run_ocr(
@@ -1155,9 +1104,6 @@ mod platform {
         game_frame: &image::RgbaImage,
         raw_events: &mut Vec<DetectionEvent>,
     ) {
-        let has_skill_ready = raw_events
-            .iter()
-            .any(|e| matches!(e, DetectionEvent::SkillReady { .. }));
         let has_round_visible = raw_events
             .iter()
             .any(|e| matches!(e, DetectionEvent::RoundVisible { .. }));
@@ -1252,48 +1198,6 @@ mod platform {
             }
         }
 
-        // Skill ON/OFF via OCR: read SP cost number near the skill icon.
-        // "0" = active (ON), any other number = inactive (OFF).
-        // "Q" label and "強化" text are excluded from matching (gamepad hides Q).
-        if has_skill_ready {
-            let ocr_skill_roi = dna_detector::roi::RoiDefinition {
-                x: 0.85,
-                y: 0.86,
-                width: 0.10,
-                height: 0.10,
-            };
-            if let Some(roi_image) = ocr_skill_roi.crop(game_frame) {
-                let binarized =
-                    dna_capture::ocr::binarize_white_text(&roi_image, OCR_BINARIZE_THRESHOLD);
-                match ocr_engine.recognize_text(&binarized) {
-                    Ok(text) => {
-                        // Parse SP cost: remove "Q" (key binding) and "強化" (label),
-                        // extract remaining digits. "0" = active, non-zero = off.
-                        let sp_cost = parse_sp_cost(&text);
-                        debug!(sp_cost = ?sp_cost, ocr_text = %text, "skill OCR result");
-                        if let Some(cost) = sp_cost {
-                            let now = Instant::now();
-                            if cost == "0" {
-                                raw_events.push(DetectionEvent::SkillActive {
-                                    sp_cost: cost,
-                                    timestamp: now,
-                                });
-                            } else {
-                                raw_events.push(DetectionEvent::SkillOff {
-                                    sp_cost: cost,
-                                    timestamp: now,
-                                });
-                            }
-                        }
-                        // sp_cost=None: OCR couldn't read SP number — skip
-                    }
-                    Err(e) => {
-                        debug!(%e, "skill OCR failed");
-                    }
-                }
-            }
-        }
-
         // Gate DialogVisible via OCR: confirm "Tips" title is present.
         // Dark camera angles trigger false DialogVisible from pixel detection.
         // Dialog ROI covers the center area where "Tips" title appears
@@ -1336,29 +1240,6 @@ mod platform {
                     debug!(%e, "dialog OCR failed — keeping pixel result");
                 }
             }
-        }
-    }
-
-    /// Extract SP cost number from OCR text near the skill icon.
-    ///
-    /// Ignores "Q" (gamepad hides it) and "強化" (always present).
-    /// Returns the first numeric string found.
-    fn parse_sp_cost(text: &str) -> Option<String> {
-        let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-
-        // Remove known non-cost text
-        let cleaned = normalized.replace('Q', "").replace("強化", "");
-
-        // Find first digit sequence
-        let start = cleaned.find(|c: char| c.is_ascii_digit())?;
-        let digits: String = cleaned[start..]
-            .chars()
-            .take_while(char::is_ascii_digit)
-            .collect();
-        if digits.is_empty() {
-            None
-        } else {
-            Some(digits)
         }
     }
 
@@ -1524,7 +1405,7 @@ mod platform {
             frame.clone()
         };
 
-        // Build filename: 20260329_173202_SkillGreyed_RoundGone.png
+        // Build filename: 20260329_173202_RoundGone.png
         let now = chrono_filename();
         let kinds: Vec<&str> = events.iter().map(event_kind_name).collect();
         let kinds_str = kinds.join("_");
@@ -1590,4 +1471,4 @@ mod platform {
 } // mod platform
 
 #[cfg(target_os = "windows")]
-pub use platform::{CaptureInfo, MonitorState, start, stop};
+pub use platform::{CaptureInfo, LatestFrame, MonitorState, start, stop};

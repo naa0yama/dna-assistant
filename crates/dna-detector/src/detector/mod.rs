@@ -1,9 +1,7 @@
 //! Detection pipeline: analyze game frames and emit events.
 
-pub mod ally_hp;
 pub mod dialog;
 pub mod round;
-pub mod skill;
 
 use image::RgbaImage;
 

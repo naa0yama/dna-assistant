@@ -57,27 +57,29 @@ impl<D: Detector> DebouncedDetector<D> {
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::config::SkillDetectorConfig;
-    use crate::detector::skill::SkillDetector;
+    use crate::config::RoundDetectorConfig;
+    use crate::detector::round::RoundDetector;
     use crate::roi::RoiDefinition;
 
-    fn test_detector() -> SkillDetector {
-        SkillDetector::new(SkillDetectorConfig {
+    fn test_detector() -> RoundDetector {
+        RoundDetector::new(RoundDetectorConfig {
             roi: RoiDefinition {
                 x: 0.0,
                 y: 0.0,
                 width: 1.0,
                 height: 1.0,
             },
-            greyed_max_brightness: 140,
-            icon_bright_threshold: 0.05,
-            icon_brightness_min: 120,
+            text_presence_threshold: 0.03,
+            brightness_min: 140,
+            max_chroma: 60,
+            text_left_brightness_min: 200,
         })
     }
 
     fn bright_frame() -> RgbaImage {
         let mut img = RgbaImage::new(10, 10);
-        for y in 0..3 {
+        // Fill 20% with neutral white (text-like pixels)
+        for y in 0..2 {
             for x in 0..10 {
                 img.put_pixel(x, y, image::Rgba([220, 220, 220, 255]));
             }
