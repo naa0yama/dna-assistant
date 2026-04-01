@@ -23,6 +23,7 @@ const eventLog = document.getElementById("event-log");
 const detRoundtrip = document.getElementById("det-roundtrip");
 const detRound = document.getElementById("det-round");
 const detDialog = document.getElementById("det-dialog");
+const detResult = document.getElementById("det-result");
 
 // Log page
 const clearLogFullBtn = document.getElementById("clear-log-full-btn");
@@ -34,8 +35,10 @@ const capSize = document.getElementById("cap-size");
 const capBackend = document.getElementById("cap-backend");
 const detRoundFull = document.getElementById("det-round-full");
 const detDialogFull = document.getElementById("det-dialog-full");
+const detResultFull = document.getElementById("det-result-full");
 const detRoundTime = document.getElementById("det-round-time");
 const detDialogTime = document.getElementById("det-dialog-time");
+const detResultTime = document.getElementById("det-result-time");
 
 // --- Sidebar toggle ---
 sidebarToggle.addEventListener("click", () => {
@@ -109,10 +112,11 @@ function updateStatusUI(status) {
 const detectorState = {
   round: { state: "unknown", label: "--", time: null },
   dialog: { state: "unknown", label: "--", time: null },
+  result: { state: "unknown", label: "--", time: null },
 };
 
 // --- Detector enabled state ---
-const detectorEnabled = { round: true, dialog: true };
+const detectorEnabled = { round: true, dialog: true, result: true };
 
 // --- RoundTrip state ---
 let roundtripStartTime = null;
@@ -185,6 +189,11 @@ function syncDetectorUI() {
   } else {
     updateDetectorBadge(detDialog, "disabled", "Disabled");
   }
+  if (detectorEnabled.result) {
+    updateDetectorBadge(detResult, s.result.state, s.result.label);
+  } else {
+    updateDetectorBadge(detResult, "disabled", "Disabled");
+  }
   // Detection page badges
   if (detectorEnabled.round) {
     updateDetectorBadge(detRoundFull, s.round.state, s.round.label);
@@ -196,9 +205,15 @@ function syncDetectorUI() {
   } else {
     updateDetectorBadge(detDialogFull, "disabled", "Disabled");
   }
+  if (detectorEnabled.result) {
+    updateDetectorBadge(detResultFull, s.result.state, s.result.label);
+  } else {
+    updateDetectorBadge(detResultFull, "disabled", "Disabled");
+  }
   // Detection page times
   detRoundTime.textContent = s.round.time || "--";
   detDialogTime.textContent = s.dialog.time || "--";
+  detResultTime.textContent = s.result.time || "--";
 }
 
 function updateDetectorFromEvent(kind, elapsedSecs) {
@@ -217,6 +232,13 @@ function updateDetectorFromEvent(kind, elapsedSecs) {
       break;
     case "DialogGone":
       detectorState.dialog = { state: "unknown", label: "None", time: now };
+      break;
+    case "ResultScreenVisible":
+      detectorState.result = { state: "ok", label: "Visible", time: now };
+      stopRoundtripTimer(elapsedSecs);
+      break;
+    case "ResultScreenGone":
+      detectorState.result = { state: "unknown", label: "None", time: now };
       break;
   }
   syncDetectorUI();

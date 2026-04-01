@@ -837,6 +837,7 @@ name = "dna-capture"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dna-detector",
  "image",
  "tracing",
  "win-screenshot",

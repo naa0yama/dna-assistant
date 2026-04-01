@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// A region defined as ratios (0.0..=1.0) relative to the frame dimensions.
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RoiDefinition {
     /// Left edge ratio (0.0 = left, 1.0 = right).
     pub x: f64,

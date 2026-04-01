@@ -6,7 +6,6 @@
 >
 > - [Capture レイヤー](./capture.md)
 > - [RoundDetector](./round-detector.md)
-> - [SkillDetector](./skill-detector.md)
 
 ## 1.1 背景
 
@@ -64,11 +63,12 @@ flowchart TD
     RETRY -- No --> CAPTURE
     RETRY -- Yes --> FIND
     SUCCESS -- Yes --> TITLEBAR["crop_titlebar()"]
-    TITLEBAR --> DETECT["各 Detector.analyze()\n(Skill, Round, Dialog)"]
+    TITLEBAR --> DETECT["各 Detector.analyze()\n(Round, Dialog, Result)"]
     DETECT --> OCR{"OCR エンジン\n利用可能?"}
-    OCR -- Yes --> OCR_RUN["run_ocr()\nround_number 付与\n偽陽性除去\nSkillActive/Off 判定\nResultScreen 検出"]
-    OCR -- No --> NOTIFY["NotificationManager\n通知判定"]
-    OCR_RUN --> NOTIFY
+    OCR -- Yes --> OCR_RUN["run_ocr()\nround_number 付与 (majority vote)\n偽陽性除去\nResultScreenDetector 実行"]
+    OCR -- No --> ROUNDTRIP["RoundTrip per-frame チェック\n(Green/Yellow/Red 閾値)"]
+    OCR_RUN --> ROUNDTRIP
+    ROUNDTRIP --> NOTIFY["NotificationManager\n通知判定"]
     NOTIFY --> TRANSITION["TransitionFilter\n状態遷移のみ UI へ"]
     TRANSITION --> EMIT["Tauri イベント送信\n(フロントエンドへ)"]
     EMIT --> INTERVAL["キャプチャ間隔待機\n(デフォルト 2 秒)"]
@@ -177,13 +177,16 @@ async fn save_settings(app_handle: AppHandle, state: State<'_, MonitorState>, co
 
 detection-overview.md セクション 1.6 で定義されたトリガーを実装する。
 
-| トリガー         | 条件                       | 持続時間 | クールダウン | 優先度 | 通知タイトル       |
-| ---------------- | -------------------------- | -------- | ------------ | ------ | ------------------ |
-| Q スキル SP 枯渇 | `SkillGreyed` が持続       | 5 秒     | 60 秒        | 高     | "Q スキル SP 枯渇" |
-| ダイアログ表示   | `DialogVisible` が持続     | 3 秒     | 60 秒        | 高     | "ダイアログ検出"   |
-| ラウンド完了     | `RoundGone` が持続         | 5 秒     | 10 秒        | 中     | "ラウンド完了"     |
-| 依頼完了(OCR)    | `ResultScreenVisible` 発生 | 0 秒     | 10 秒        | 中     | "依頼完了"         |
-| 味方 HP 低下     | `AllyHpLow` が持続         | 10 秒    | 60 秒        | 低     | "味方 HP 低下"     |
+| トリガー              | 条件                            | 持続時間 | クールダウン | 優先度 | 通知タイトル          |
+| --------------------- | ------------------------------- | -------- | ------------ | ------ | --------------------- |
+| ダイアログ表示        | `DialogVisible` が持続          | 3 秒     | 60 秒        | 高     | "ダイアログ検出"      |
+| ラウンド完了          | `RoundGone` が持続              | 5 秒     | 10 秒        | 中     | "ラウンド完了"        |
+| 依頼完了(OCR)         | `ResultScreenVisible` 確定      | 0 秒     | 10 秒        | 中     | "依頼完了"            |
+| RoundTrip Green 超過  | RoundTrip 経過 >= Green 閾値    | 0 秒     | 10 秒        | 中     | "RoundTrip: Green"    |
+| RoundTrip Yellow 超過 | RoundTrip 経過 >= Yellow 閾値   | 0 秒     | 10 秒        | 高     | "RoundTrip: Yellow"   |
+| RoundTrip Red 超過    | RoundTrip 経過 >= Red 閾値      | 0 秒     | 10 秒        | 高     | "RoundTrip: Red"      |
+
+`RoundTrip` 閾値通知は `roundtrip_max_repeat` (デフォルト 5) 回まで最高レベルを繰り返し通知する。`notify_result_screen()` は `TransitionFilter` による確定後に呼び出される。
 
 ### 通知重複制御
 
@@ -196,11 +199,7 @@ Detector → [OCR 補正] → NotificationManager(持続時間判定) → Toast
                        → TransitionFilter(状態遷移抽出) → UI イベント
 ```
 
-`NotificationManager` は各トリガーの条件開始時刻を保持し、持続時間を超えた場合のみ通知を送信する。否定状態(`RoundGone`, `SkillGreyed`)は、対応する肯定状態(`RoundVisible`, `SkillReady`)が最初に観測されるまで通知を抑制する(ロビー画面等での偽通知防止)。
-
-### ラウンド遷移時のスキル抑制
-
-`RoundGone` 発生後 `round_transition_suppress`(デフォルト 15 秒)の間、Skill 系イベントを `TransitionFilter` と `NotificationManager` の両方で抑制する。画面遷移時にスキルアイコンが消失し偽 `SkillGreyed` が発生するのを防ぐ。
+`NotificationManager` は各トリガーの条件開始時刻を保持し、持続時間を超えた場合のみ通知を送信する。否定状態(`RoundGone`)は、対応する肯定状態(`RoundVisible`)が最初に観測されるまで通知を抑制する(ロビー画面等での偽通知防止)。
 
 ## 1.7 フロントエンド UI
 

@@ -100,6 +100,8 @@ pub struct NotificationManager {
     round_was_visible: bool,
     /// True when `RoundGone` has been notified and awaits `RoundVisible` reset.
     round_notified: bool,
+    /// How many times the highest `RoundTrip` threshold has repeated.
+    roundtrip_repeat_count: u32,
     /// Current round number (set externally from monitor loop).
     current_round: Option<u32>,
     /// Latest captured frame for Discord screenshot attachment.
@@ -116,6 +118,7 @@ impl NotificationManager {
             last_notified: HashMap::new(),
             round_was_visible: false,
             round_notified: false,
+            roundtrip_repeat_count: 0,
             current_round: None,
             latest_frame: None,
             config: config.clone(),
@@ -153,11 +156,25 @@ impl NotificationManager {
             return;
         }
 
-        // Check cooldown
-        if let Some(&last) = self.last_notified.get(&kind)
-            && now.duration_since(last) < self.config.notify_round_cooldown
-        {
-            return;
+        let highest = self.highest_enabled_kind();
+        if kind == highest {
+            // Highest level: repeat at its own threshold interval.
+            // e.g., Red=90s → fires at 90s, 180s, 270s...
+            // Limited to max_repeat times.
+            if self.roundtrip_repeat_count >= self.config.roundtrip_max_repeat {
+                return;
+            }
+            let threshold = self.threshold_for(kind);
+            if let Some(&last) = self.last_notified.get(&kind)
+                && now.duration_since(last) < threshold
+            {
+                return;
+            }
+        } else {
+            // Lower levels: fire once only
+            if self.last_notified.contains_key(&kind) {
+                return;
+            }
         }
 
         #[cfg(target_os = "windows")]
@@ -181,6 +198,17 @@ impl NotificationManager {
 
         self.send_notification_with_image(tc.title, &body, mention);
         self.last_notified.insert(kind, now);
+        if kind == highest {
+            self.roundtrip_repeat_count = self.roundtrip_repeat_count.saturating_add(1);
+        }
+    }
+
+    /// Reset `RoundTrip` state (call on `RoundVisible` or `ResultScreenGone`).
+    pub fn reset_roundtrip(&mut self) {
+        self.roundtrip_repeat_count = 0;
+        self.last_notified.remove(&TriggerKind::RoundTripGreen);
+        self.last_notified.remove(&TriggerKind::RoundTripYellow);
+        self.last_notified.remove(&TriggerKind::RoundTripRed);
     }
 
     /// Process detection events and send notifications if trigger conditions are met.
@@ -206,14 +234,11 @@ impl NotificationManager {
                 DetectionEvent::DialogGone { .. } => {
                     self.clear_condition(TriggerKind::DialogVisible);
                 }
-                DetectionEvent::ResultScreenVisible { .. } => {
-                    self.track_condition(TriggerKind::ResultScreen, now);
-                }
-                DetectionEvent::ResultScreenGone { .. } => {
-                    self.clear_condition(TriggerKind::ResultScreen);
-                }
-                // Events that don't trigger notifications
-                _ => {}
+                // ResultScreen: handled via confirmed transitions, not raw events.
+                // RoundSelectScreen: internal-only, no notifications.
+                DetectionEvent::ResultScreenVisible { .. }
+                | DetectionEvent::ResultScreenGone { .. }
+                | DetectionEvent::RoundSelectScreen { .. } => {}
             }
         }
 
@@ -255,6 +280,64 @@ impl NotificationManager {
         dna_capture::window::is_game_foreground()
     }
 
+    /// Notify `ResultScreen` detection (called after `TransitionFilter` confirmation).
+    #[instrument(skip_all)]
+    pub fn notify_result_screen(&mut self) {
+        let kind = TriggerKind::ResultScreen;
+
+        if !self.is_trigger_enabled(kind) {
+            debug!("result screen notification suppressed: disabled");
+            return;
+        }
+
+        let now = Instant::now();
+        let tc = trigger_config(kind, &self.config);
+
+        // Check cooldown
+        if let Some(&last) = self.last_notified.get(&kind)
+            && now.duration_since(last) < tc.cooldown
+        {
+            debug!("result screen notification suppressed: cooldown");
+            return;
+        }
+
+        #[cfg(target_os = "windows")]
+        if self.config.suppress_when_game_focused && Self::is_game_focused() {
+            debug!("result screen notification suppressed: game focused");
+            return;
+        }
+
+        let body = self.current_round.map_or_else(
+            || String::from(tc.body),
+            |round| format!("ラウンド {round:02} が完了しました (OCR 確認済み)"),
+        );
+
+        let mention = true;
+        self.send_notification_with_image(tc.title, &body, mention);
+        self.last_notified.insert(kind, now);
+    }
+
+    /// Return the highest enabled `RoundTrip` trigger kind.
+    const fn highest_enabled_kind(&self) -> TriggerKind {
+        if self.config.notify_roundtrip_red {
+            TriggerKind::RoundTripRed
+        } else if self.config.notify_roundtrip_yellow {
+            TriggerKind::RoundTripYellow
+        } else {
+            TriggerKind::RoundTripGreen
+        }
+    }
+
+    /// Return the threshold duration for a `RoundTrip` kind.
+    const fn threshold_for(&self, kind: TriggerKind) -> Duration {
+        match kind {
+            TriggerKind::RoundTripRed => self.config.roundtrip_red,
+            TriggerKind::RoundTripYellow => self.config.roundtrip_yellow,
+            // Green or any other kind (only called from notify_roundtrip).
+            _ => self.config.roundtrip_green,
+        }
+    }
+
     /// Check if a condition has been sustained long enough and send notification.
     fn check_and_notify(&mut self, kind: TriggerKind, now: Instant) {
         let Some(&start) = self.condition_start.get(&kind) else {
@@ -294,7 +377,7 @@ impl NotificationManager {
             },
         );
 
-        let mention = matches!(kind, TriggerKind::DialogVisible);
+        let mention = matches!(kind, TriggerKind::DialogVisible | TriggerKind::ResultScreen);
         self.send_notification_with_image(tc.title, &body, mention);
         self.last_notified.insert(kind, now);
         self.condition_start.remove(&kind);

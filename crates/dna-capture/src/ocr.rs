@@ -119,3 +119,13 @@ pub fn binarize_white_text(image: &RgbaImage, threshold: u8) -> RgbaImage {
     }
     out
 }
+
+/// Default binarization threshold for white text on dark backgrounds.
+const DEFAULT_BINARIZE_THRESHOLD: u8 = 140;
+
+impl dna_detector::ocr::OcrEngine for JapaneseOcrEngine {
+    fn recognize(&self, image: &RgbaImage) -> Result<String, String> {
+        let binarized = binarize_white_text(image, DEFAULT_BINARIZE_THRESHOLD);
+        self.recognize_text(&binarized).map_err(|e| e.to_string())
+    }
+}

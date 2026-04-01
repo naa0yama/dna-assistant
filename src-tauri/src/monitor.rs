@@ -43,6 +43,8 @@ use dna_detector::detector::Detector;
 #[cfg(target_os = "windows")]
 use dna_detector::detector::dialog::DialogDetector;
 #[cfg(target_os = "windows")]
+use dna_detector::detector::result::ResultScreenDetector;
+#[cfg(target_os = "windows")]
 use dna_detector::detector::round::RoundDetector;
 #[cfg(target_os = "windows")]
 use dna_detector::event::DetectionEvent;
@@ -131,6 +133,9 @@ pub struct MonitorConfig {
     /// Notify when `RoundTrip` exceeds Red threshold.
     #[serde(default = "default_true")]
     pub notify_roundtrip_red: bool,
+    /// Maximum number of repeat notifications for the highest `RoundTrip` threshold.
+    #[serde(default = "default_roundtrip_max_repeat")]
+    pub roundtrip_max_repeat: u32,
     /// Suppress notifications when the game window is the foreground window.
     #[serde(default)]
     pub suppress_when_game_focused: bool,
@@ -171,6 +176,11 @@ const fn default_roundtrip_red() -> Duration {
 }
 
 #[cfg(target_os = "windows")]
+const fn default_roundtrip_max_repeat() -> u32 {
+    5
+}
+
+#[cfg(target_os = "windows")]
 const fn default_confirmation_ratio() -> f64 {
     0.80
 }
@@ -201,6 +211,7 @@ impl Default for MonitorConfig {
             notify_roundtrip_green: false,
             notify_roundtrip_yellow: false,
             notify_roundtrip_red: true,
+            roundtrip_max_repeat: 5,
             suppress_when_game_focused: false,
             discord_enabled: false,
             discord_webhook_url: String::new(),
@@ -385,10 +396,7 @@ mod platform {
         fn is_transition(&mut self, event: &DetectionEvent) -> bool {
             // Round number events are internal-only (update round state
             // but don't appear in the UI event log). Always suppress here.
-            if matches!(
-                event,
-                DetectionEvent::RoundEndScreen { .. } | DetectionEvent::RoundSelectScreen { .. }
-            ) {
+            if matches!(event, DetectionEvent::RoundSelectScreen { .. }) {
                 return false;
             }
 
@@ -452,9 +460,7 @@ mod platform {
             }
             DetectionEvent::ResultScreenVisible { .. }
             | DetectionEvent::ResultScreenGone { .. } => DetectorCategory::ResultScreen,
-            DetectionEvent::RoundEndScreen { .. } | DetectionEvent::RoundSelectScreen { .. } => {
-                DetectorCategory::RoundNumber
-            }
+            DetectionEvent::RoundSelectScreen { .. } => DetectorCategory::RoundNumber,
         }
     }
 
@@ -627,20 +633,25 @@ mod platform {
         // Round state tracking
         let mut current_round: Option<u32> = None;
         let mut round_start: Option<Instant> = None;
-        // Pending round numbers from OCR (cleared on RoundGone)
-        let mut detected_end_round: Option<u32> = None;
-        let mut detected_select_round: Option<u32> = None;
+        // Round number votes from OCR frames (cleared on RoundVisible)
+        let mut select_round_votes: Vec<u32> = Vec::new();
         // Recent confirmed round numbers (max 3) for consecutive inference
         let mut round_history: Vec<u32> = Vec::with_capacity(3);
         // Cached resolution warning to avoid mutex lock every frame
         let mut prev_resolution_warning: Option<String> = None;
+        // Result screen scanning: activated after RoundGone confirmation
+        let mut result_scanning = false;
+        // Whether ResultScreenVisible has been confirmed (gates Gone events)
+        let mut result_visible_confirmed = false;
 
         // Build detectors.
         // All detectors call analyze() directly. TransitionFilter handles
         // state-change deduplication.
         let round_number_rois = dna_detector::config::RoundNumberRoiConfig::default();
-        let round_detector = RoundDetector::new(det_config.round);
-        let dialog_detector = DialogDetector::new(det_config.dialog);
+        let round_detector = RoundDetector::new(det_config.round.clone());
+        let dialog_detector = DialogDetector::new(det_config.dialog.clone());
+        let result_detector =
+            ResultScreenDetector::new(dna_detector::config::ResultScreenRoiConfig::default());
 
         // Initialize OCR engine (optional — gracefully degrades if unavailable)
         let ocr_engine = match dna_capture::ocr::JapaneseOcrEngine::new() {
@@ -773,13 +784,14 @@ mod platform {
                 if let Some(ref ocr_engine) = ocr_engine
                     && transition_filter.has_pending_transition(&raw_events)
                 {
-                    run_ocr(ocr_engine, &game_frame, &mut raw_events);
+                    run_ocr(ocr_engine, &game_frame, &mut raw_events, &det_config);
                 }
 
                 // Round number OCR (independent of pixel detector transitions).
-                // Scans for "XX ラウンド終了" and round selection screens
-                // to extract accurate round numbers.
-                if let Some(ref ocr_engine) = ocr_engine {
+                // Scans for round selection screens to extract round numbers.
+                if monitor_config.round_enabled
+                    && let Some(ref ocr_engine) = ocr_engine
+                {
                     run_round_number_ocr(
                         ocr_engine,
                         &game_frame,
@@ -788,20 +800,37 @@ mod platform {
                     );
                 }
 
-                // Collect round numbers from OCR events (internal-only, not shown in UI).
-                // These are compared and resolved when RoundGone fires.
+                // Result screen OCR: runs every frame while result_scanning is active.
+                // Gated by RoundGone → result_scanning=true chain.
+                if result_scanning && let Some(ref ocr_engine) = ocr_engine {
+                    let result_events = result_detector.analyze(&game_frame, ocr_engine);
+                    for event in result_events {
+                        match event {
+                            // Always pass through Visible
+                            DetectionEvent::ResultScreenVisible { .. } => {
+                                result_visible_confirmed = true;
+                                raw_events.push(event);
+                            }
+                            // Only pass Gone if Visible was already confirmed
+                            // (avoids false None→Gone transition on scan start)
+                            DetectionEvent::ResultScreenGone { .. } => {
+                                if result_visible_confirmed {
+                                    raw_events.push(event);
+                                }
+                            }
+                            _ => raw_events.push(event),
+                        }
+                    }
+                }
+
+                // Collect round numbers and manage result scanning from raw events.
                 for event in &raw_events {
-                    match event {
-                        DetectionEvent::RoundEndScreen { round_number, .. } => {
-                            detected_end_round = Some(*round_number);
-                        }
-                        DetectionEvent::RoundSelectScreen {
-                            completed_round: Some(done),
-                            ..
-                        } => {
-                            detected_select_round = Some(*done);
-                        }
-                        _ => {}
+                    if let DetectionEvent::RoundSelectScreen {
+                        completed_round: Some(done),
+                        ..
+                    } = event
+                    {
+                        select_round_votes.push(*done);
                     }
                 }
 
@@ -809,6 +838,12 @@ mod platform {
                 if !raw_events.is_empty() {
                     notification_mgr.set_current_round(current_round);
                     notification_mgr.process_events(&raw_events);
+                }
+
+                // RoundTrip threshold check: fires during RoundVisible
+                // based on elapsed time since round_start.
+                if let Some(start) = round_start {
+                    notification_mgr.notify_roundtrip(start.elapsed());
                 }
 
                 // Filter to state transitions only for UI
@@ -841,9 +876,12 @@ mod platform {
                                 if round_start.is_none() {
                                     round_start = Some(Instant::now());
                                 }
+                                // Reset RoundTrip notifications for new round
+                                notification_mgr.reset_roundtrip();
                                 // Clear stale OCR data from previous cycle
-                                detected_end_round = None;
-                                detected_select_round = None;
+                                select_round_votes.clear();
+                                // New round started: stop result scanning
+                                result_scanning = false;
                             }
                             DetectionEvent::RoundGone { .. } => {
                                 // Calculate elapsed time for this round
@@ -851,18 +889,14 @@ mod platform {
                                 elapsed = elapsed_duration.map(format_elapsed);
                                 round_start = None;
 
-                                // Check RoundTrip threshold notifications
-                                if let Some(dur) = elapsed_duration {
-                                    notification_mgr.notify_roundtrip(dur);
-                                }
-
                                 // Resolve completed round number from OCR sources
-                                let completed = resolve_round_number(
-                                    detected_end_round.take(),
-                                    detected_select_round.take(),
-                                    current_round,
-                                    &round_history,
+                                let majority = majority_vote(
+                                    &select_round_votes,
+                                    monitor_config.confirmation_ratio,
                                 );
+                                select_round_votes.clear();
+                                let completed =
+                                    resolve_round_number(majority, current_round, &round_history);
                                 if let Some(num) = completed {
                                     current_round = Some(num);
                                     // Update history (keep last 3)
@@ -873,6 +907,26 @@ mod platform {
                                 }
                                 // Advance to next round after emitting
                                 // (deferred: update current_round after payload)
+
+                                // Start scanning for result screen
+                                result_scanning = true;
+                            }
+                            DetectionEvent::ResultScreenVisible { .. } => {
+                                elapsed_duration = round_start.map(|s| s.elapsed());
+                                elapsed = elapsed_duration.map(format_elapsed);
+                                // Quest complete: reset round state
+                                round_start = None;
+                                current_round = None;
+                                // Keep result_scanning=true until Gone confirms
+                                // Notify ResultScreen (confirmed by TransitionFilter)
+                                notification_mgr.notify_result_screen();
+                            }
+                            DetectionEvent::ResultScreenGone { .. } => {
+                                // Result screen dismissed: full reset
+                                result_scanning = false;
+                                result_visible_confirmed = false;
+                                round_start = None;
+                                notification_mgr.reset_roundtrip();
                             }
                             _ => {}
                         }
@@ -889,7 +943,8 @@ mod platform {
                         // After emitting RoundGone, advance to next round
                         if matches!(event, DetectionEvent::RoundGone { .. }) {
                             if let Some(num) = current_round {
-                                current_round = Some(num.saturating_add(1));
+                                let next = num.saturating_add(1);
+                                current_round = if next <= 99 { Some(next) } else { None };
                             }
                             round_start = Some(Instant::now());
                         }
@@ -955,7 +1010,6 @@ mod platform {
             DetectionEvent::ResultScreenGone { .. } => "ResultScreenGone",
             DetectionEvent::DialogVisible { .. } => "DialogVisible",
             DetectionEvent::DialogGone { .. } => "DialogGone",
-            DetectionEvent::RoundEndScreen { .. } => "RoundEndScreen",
             DetectionEvent::RoundSelectScreen { .. } => "RoundSelectScreen",
         }
     }
@@ -1001,51 +1055,57 @@ mod platform {
         }
     }
 
-    /// Resolve the completed round number from multiple OCR sources.
+    /// Pick the confirmed value from frame-level OCR votes.
     ///
-    /// Uses recent round history to validate candidates:
-    /// 1. Both sources agree → adopt
-    /// 2. Both disagree → pick the one that is `current` (expected value)
-    /// 3. Only one source → adopt only if it equals `current` (plausible)
-    /// 4. No sources → infer from history (last + 1 if consecutive)
+    /// Returns `Some(value)` if a single value meets the `confirmation_ratio`
+    /// threshold. Returns `None` if no value has sufficient agreement.
+    fn majority_vote(votes: &[u32], confirmation_ratio: f64) -> Option<u32> {
+        if votes.is_empty() {
+            return None;
+        }
+        // Count occurrences of each value
+        let mut counts: Vec<(u32, usize)> = Vec::new();
+        for &v in votes {
+            if let Some(entry) = counts.iter_mut().find(|(val, _)| *val == v) {
+                entry.1 = entry.1.saturating_add(1);
+            } else {
+                counts.push((v, 1));
+            }
+        }
+        // Find the value with the most votes
+        let (best_val, best_count) = counts.iter().copied().max_by_key(|&(_, c)| c)?;
+        #[allow(clippy::cast_precision_loss, clippy::as_conversions)]
+        let ratio = (best_count as f64) / (votes.len() as f64);
+        if ratio >= confirmation_ratio {
+            Some(best_val)
+        } else {
+            None
+        }
+    }
+
+    /// Resolve the completed round number from OCR majority vote.
+    ///
+    /// Validation rules:
+    /// 1. Matches `current` → accept (expected value)
+    /// 2. First detection (`current` is None) → accept (bootstrapped by
+    ///    majority vote which already filters single-frame noise)
+    /// 3. Doesn't match → reject (OCR misread), fall through to inference
+    /// 4. No OCR → infer from consecutive history (last + 1)
     fn resolve_round_number(
-        end_round: Option<u32>,
         select_round: Option<u32>,
         current: Option<u32>,
         history: &[u32],
     ) -> Option<u32> {
-        let candidate = match (end_round, select_round) {
-            (Some(e), Some(s)) if e == s => Some(e),
-            (Some(e), Some(s)) => {
-                // Disagree: pick the one matching current
-                if current == Some(e) {
-                    Some(e)
-                } else if current == Some(s) {
-                    Some(s)
-                } else {
-                    None
-                }
-            }
-            (Some(e), None) => Some(e),
-            (None, Some(s)) => Some(s),
-            (None, None) => None,
-        };
-
-        // Validate candidate against current round
-        if let Some(num) = candidate {
-            // Both sources agreed → high confidence, accept unconditionally
-            if end_round.is_some() && select_round.is_some() {
+        if let Some(num) = select_round {
+            // First detection: majority vote already confirmed → accept
+            if current.is_none() {
                 return Some(num);
             }
-            // Matches current round → plausible
+            // Matches expected current round → accept
             if current == Some(num) {
                 return Some(num);
             }
-            // No current to validate against; accept if we have history
-            if current.is_none() && !history.is_empty() {
-                return Some(num);
-            }
-            // Single source that doesn't match current → reject (fall through)
+            // Mismatch with current: OCR likely misread, reject
         }
 
         // Fallback: infer from history if rounds are consecutive
@@ -1057,11 +1117,14 @@ mod platform {
                     .unwrap_or(false)
             });
             if is_consecutive && let Some(last) = history.last() {
-                return Some(last.saturating_add(1));
+                let next = last.saturating_add(1);
+                if next <= 99 {
+                    return Some(next);
+                }
             }
         }
 
-        // No reliable source — return None rather than repeating current_round
+        // No reliable source
         None
     }
 
@@ -1087,29 +1150,24 @@ mod platform {
             DetectionEvent::DialogVisible { .. } => String::from("ダイアログ表示"),
             DetectionEvent::DialogGone { .. } => String::from("ダイアログ消失"),
             // Internal-only events (not shown in UI)
-            DetectionEvent::RoundEndScreen { .. } | DetectionEvent::RoundSelectScreen { .. } => {
-                String::new()
-            }
+            DetectionEvent::RoundSelectScreen { .. } => String::new(),
         }
     }
 
     /// Run OCR conditionally based on pixel detector results.
     ///
     /// - When `RoundVisible`: OCR the round text ROI to extract round number.
-    /// - When `RoundGone`: OCR the result text area for "依頼完了" confirmation.
     /// - When `DialogVisible`: OCR the dialog area for "Tips" title confirmation.
-    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity, clippy::ptr_arg)]
     fn run_ocr(
         ocr_engine: &dna_capture::ocr::JapaneseOcrEngine,
         game_frame: &image::RgbaImage,
         raw_events: &mut Vec<DetectionEvent>,
+        det_config: &DetectionConfig,
     ) {
         let has_round_visible = raw_events
             .iter()
             .any(|e| matches!(e, DetectionEvent::RoundVisible { .. }));
-        let has_round_gone = raw_events
-            .iter()
-            .any(|e| matches!(e, DetectionEvent::RoundGone { .. }));
         let has_dialog_visible = raw_events
             .iter()
             .any(|e| matches!(e, DetectionEvent::DialogVisible { .. }));
@@ -1117,13 +1175,7 @@ mod platform {
         // Enrich RoundVisible with OCR round number
         // Use an enlarged ROI (wider + taller than pixel detector ROI)
         // so Windows OCR has enough text height to recognize characters.
-        let ocr_round_roi = dna_detector::roi::RoiDefinition {
-            x: 0.0,
-            y: 0.22,
-            width: 0.30,
-            height: 0.10,
-        };
-        if has_round_visible && let Some(ocr_image) = ocr_round_roi.crop(game_frame) {
+        if has_round_visible && let Some(ocr_image) = det_config.round.roi.crop(game_frame) {
             let binarized =
                 dna_capture::ocr::binarize_white_text(&ocr_image, OCR_BINARIZE_THRESHOLD);
             match ocr_engine.recognize_text(&binarized) {
@@ -1170,44 +1222,9 @@ mod platform {
             }
         }
 
-        // Check for result screen when round text disappears
-        // "依頼完了" appears in the bottom-left area of the result screen
-        let ocr_result_roi = dna_detector::roi::RoiDefinition {
-            x: 0.0,
-            y: 0.75,
-            width: 0.35,
-            height: 0.20,
-        };
-        if has_round_gone && let Some(ocr_image) = ocr_result_roi.crop(game_frame) {
-            let binarized =
-                dna_capture::ocr::binarize_white_text(&ocr_image, OCR_BINARIZE_THRESHOLD);
-            match ocr_engine.recognize_text(&binarized) {
-                Ok(text) => {
-                    debug!(ocr_text = %text, "result screen OCR result");
-                    if text.contains("依頼完了") {
-                        info!(ocr_text = %text, "result screen detected via OCR");
-                        raw_events.push(DetectionEvent::ResultScreenVisible {
-                            text,
-                            timestamp: Instant::now(),
-                        });
-                    }
-                }
-                Err(e) => {
-                    debug!(%e, "result screen OCR failed");
-                }
-            }
-        }
-
         // Gate DialogVisible via OCR: confirm "Tips" title is present.
         // Dark camera angles trigger false DialogVisible from pixel detection.
-        // Dialog ROI covers the center area where "Tips" title appears
-        let ocr_dialog_roi = dna_detector::roi::RoiDefinition {
-            x: 0.25,
-            y: 0.35,
-            width: 0.50,
-            height: 0.20,
-        };
-        if has_dialog_visible && let Some(ocr_image) = ocr_dialog_roi.crop(game_frame) {
+        if has_dialog_visible && let Some(ocr_image) = det_config.dialog.ocr_roi.crop(game_frame) {
             let binarized =
                 dna_capture::ocr::binarize_white_text(&ocr_image, OCR_BINARIZE_THRESHOLD);
             match ocr_engine.recognize_text(&binarized) {
@@ -1254,34 +1271,9 @@ mod platform {
         raw_events: &mut Vec<DetectionEvent>,
         rois: &dna_detector::config::RoundNumberRoiConfig,
     ) {
-        use dna_detector::round_number::{
-            is_round_end_text, is_round_select_text, parse, parse_select_header,
-        };
+        use dna_detector::round_number::{is_round_select_text, parse, parse_select_header};
 
-        // 1. Check for "XX ラウンド終了" screen
-        if let Some(roi_image) = rois.round_end.crop(game_frame) {
-            let binarized =
-                dna_capture::ocr::binarize_white_text(&roi_image, OCR_BINARIZE_THRESHOLD);
-            match ocr_engine.recognize_text(&binarized) {
-                Ok(text) if !text.is_empty() => {
-                    let is_end = is_round_end_text(&text);
-                    let round_num = parse(&text);
-                    debug!(is_end, round_number = ?round_num, ocr_text = %text, "round_end ROI OCR");
-                    if is_end && let Some(num) = round_num {
-                        raw_events.push(DetectionEvent::RoundEndScreen {
-                            round_number: num,
-                            timestamp: Instant::now(),
-                        });
-                    }
-                }
-                Ok(_) => {} // empty text, skip
-                Err(e) => {
-                    debug!(%e, "round_end ROI OCR failed");
-                }
-            }
-        }
-
-        // 2. Check for round selection screen via header
+        // Check for round selection screen via header
         if let Some(header_image) = rois.select_header.crop(game_frame) {
             let binarized =
                 dna_capture::ocr::binarize_white_text(&header_image, OCR_BINARIZE_THRESHOLD);

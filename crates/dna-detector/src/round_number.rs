@@ -78,11 +78,14 @@ pub fn parse_select_header(text: &str) -> Option<u32> {
     let after = normalized.split("周回中").nth(1)?;
 
     // Skip opening bracket/colon: （, (, :, etc.
-    let after = after.trim_start_matches(['（', '(', ':', '：', '/', '′', '\'']);
+    let after = after.trim_start_matches(['（', '(', ':', '：', '′', '\'']);
 
-    // Extract first 1-2 digit sequence
+    // Extract X from "X/Y" — stop at '/' to avoid picking up Y on misread
+    let before_slash = after.split('/').next().unwrap_or(after);
+
+    // Extract first 1-2 digit sequence from X portion only
     let mut digits = String::new();
-    for ch in after.chars() {
+    for ch in before_slash.chars() {
         if ch.is_ascii_digit() {
             digits.push(ch);
         } else if !digits.is_empty() {
@@ -221,6 +224,12 @@ mod tests {
     fn header_ocr_colon_variant() {
         // Real OCR: "自動周回中 : 98 ′ 9"  (（98/99） misread)
         assert_eq!(parse_select_header("自 動 周 回 中 : 98 ′ 9"), Some(98));
+    }
+
+    #[test]
+    fn header_misread_x_does_not_return_y() {
+        // OCR misreads X as kanji: "自動周回中(劉/99)" → should be None, not 99
+        assert_eq!(parse_select_header("自 動 周 回 中 ( 劉 / 99 )"), None);
     }
 
     #[test]

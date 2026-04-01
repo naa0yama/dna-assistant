@@ -52,9 +52,9 @@ ROI 左端 1/4 領域の最大輝度を計測し、`text_left_brightness_min`(`2
 | パラメータ | 値      | 説明           |
 | ---------- | ------- | -------------- |
 | `x`        | `0.0`   | 左端からの比率 |
-| `y`        | `0.256` | 上端からの比率 |
-| `width`    | `0.250` | 幅の比率       |
-| `height`   | `0.035` | 高さの比率     |
+| `y`        | `0.25`  | 上端からの比率 |
+| `width`    | `0.237` | 幅の比率       |
+| `height`   | `0.10`  | 高さの比率     |
 
 ゲーム画面左上のラウンド表示テキスト領域を対象とする。
 
@@ -114,7 +114,7 @@ capture frame → crop_titlebar() → detector.analyze(&game_area) → Detection
 /// Configuration for the round completion detector.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoundDetectorConfig {
-    /// ROI for the round text area.
+    /// ROI for the round text area (pixel detection and OCR).
     pub roi: RoiDefinition,
     /// Minimum text pixel ratio to consider text present (e.g., 0.03).
     pub text_presence_threshold: f64,
@@ -133,7 +133,7 @@ pub struct RoundDetectorConfig {
 
 ```rust
 RoundDetectorConfig {
-    roi: RoiDefinition { x: 0.0, y: 0.256, width: 0.250, height: 0.035 },
+    roi: RoiDefinition { x: 0.0, y: 0.25, width: 0.237, height: 0.10 },
     text_presence_threshold: 0.03,
     brightness_min: 140,
     max_chroma: 60,

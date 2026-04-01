@@ -142,6 +142,12 @@ mod tests {
                 width: 1.0,
                 height: 0.5,
             },
+            ocr_roi: RoiDefinition {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
             text_presence_threshold: 0.10,
             bg_dark_threshold: 0.85,
             brightness_min: 100,

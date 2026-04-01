@@ -91,7 +91,7 @@
       <div class="card bg-base-100 shadow-md">
         <div class="card-body p-3">
           <span class="text-xs text-base-content/50 font-semibold uppercase mb-1">Detectors</span>
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-4 gap-3">
             <div class="text-center">
               <div class="text-xs text-base-content/50 mb-1">Round Trip</div>
               <div class="detector-badge" id="det-roundtrip" data-state="unknown">--</div>
@@ -103,6 +103,10 @@
             <div class="text-center">
               <div class="text-xs text-base-content/50 mb-1">Dialog</div>
               <div class="detector-badge" id="det-dialog" data-state="unknown">--</div>
+            </div>
+            <div class="text-center">
+              <div class="text-xs text-base-content/50 mb-1">Result</div>
+              <div class="detector-badge" id="det-result" data-state="unknown">--</div>
             </div>
           </div>
         </div>
@@ -189,6 +193,12 @@
               <span><span class="detector-badge-sm" id="det-dialog-full" data-state="unknown">--</span></span>
               <span class="text-xs font-mono text-base-content/40">x=0.310 y=0.450</span>
               <span class="text-xs font-mono text-base-content/40" id="det-dialog-time">--</span>
+            </div>
+            <div class="grid grid-cols-[140px_80px_160px_100px] gap-2 px-1 py-1.5 text-sm bg-base-200/30 border-b border-base-200">
+              <span class="text-base-content/80">ResultScreen</span>
+              <span><span class="detector-badge-sm" id="det-result-full" data-state="unknown">--</span></span>
+              <span class="text-xs font-mono text-base-content/40">x=0.000 y=0.580</span>
+              <span class="text-xs font-mono text-base-content/40" id="det-result-time">--</span>
             </div>
           </div>
         </div>

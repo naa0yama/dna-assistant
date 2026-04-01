@@ -54,13 +54,6 @@ pub enum DetectionEvent {
         /// When this was detected.
         timestamp: Instant,
     },
-    /// Round end screen detected ("XX ラウンド終了").
-    RoundEndScreen {
-        /// Completed round number (1-99).
-        round_number: u32,
-        /// When this was detected.
-        timestamp: Instant,
-    },
     /// Round selection screen detected ("自動周回中").
     RoundSelectScreen {
         /// Next round number from right panel (1-99).

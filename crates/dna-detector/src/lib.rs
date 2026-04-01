@@ -8,6 +8,7 @@ pub mod color;
 pub mod config;
 pub mod detector;
 pub mod event;
+pub mod ocr;
 pub mod roi;
 pub mod round_number;
 pub mod state;

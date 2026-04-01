@@ -1,25 +1,23 @@
-//! Integration test: run Windows OCR on round number fixture images.
+//! Integration test: run Windows OCR on round select fixture images.
 //!
-//! Verifies actual OCR output for `round_end` and `round_select` ROIs.
-//! Windows-only (requires `dna-capture` OCR engine).
-//!
-//! Run with: `cargo test -p dna-assistant --test round_number_ocr_test -- --ignored --nocapture`
+//! Verifies that Windows OCR can recognize text from config-ROI-cropped
+//! fixture images. These tests run automatically on Windows to catch
+//! ROI regressions that break OCR recognition.
 
 #![cfg(target_os = "windows")]
 
 use dna_capture::ocr::{JapaneseOcrEngine, binarize_white_text};
 use dna_detector::config::RoundNumberRoiConfig;
-use dna_detector::round_number::{
-    is_round_end_text, is_round_select_text, parse, parse_select_header,
-};
+use dna_detector::round_number::{is_round_select_text, parse, parse_select_header};
 use dna_detector::titlebar::crop_titlebar;
+
+// ── Helpers ─────────────────────────────────────────────────────────
 
 /// Load a fixture from dna-detector's test fixtures directory.
 #[allow(clippy::panic)]
-fn load_fixture(subdir: &str, name: &str) -> image::RgbaImage {
-    // Navigate from src-tauri to crates/dna-detector
+fn load_fixture(name: &str) -> image::RgbaImage {
     let path = format!(
-        "{}/../crates/dna-detector/tests/fixtures/{subdir}/{name}",
+        "{}/../crates/dna-detector/tests/fixtures/round_select/{name}",
         env!("CARGO_MANIFEST_DIR")
     );
     image::open(&path)
@@ -27,7 +25,7 @@ fn load_fixture(subdir: &str, name: &str) -> image::RgbaImage {
         .to_rgba8()
 }
 
-/// Run OCR on a cropped + binarized ROI and return the text.
+/// Crop ROI, binarize, and run OCR.
 fn ocr_roi(
     engine: &JapaneseOcrEngine,
     game_frame: &image::RgbaImage,
@@ -43,86 +41,87 @@ fn ocr_roi(
     }
 }
 
-// ── Round end screen OCR ────────────────────────────────────────────
+// ── Tests ───────────────────────────────────────────────────────────
 
-const ROUND_END_FIXTURES: &[(&str, u32)] = &[
-    ("round_end_1282x752.png", 8),
-    ("round_end_1368x800.png", 4),
-    ("round_end_1602x932.png", 13),
-    ("round_end_1922x1112.png", 19),
-    ("round_01_end.png", 1),
-    ("round_03_end.png", 3),
-];
-
+/// Verify header ROI OCR recognizes "自動周回中" and extracts the round number.
 #[cfg_attr(miri, ignore)]
 #[test]
-#[ignore = "Windows-only OCR integration test"]
-fn ocr_round_end_all_resolutions() {
+fn ocr_round_select_header() {
     let engine = JapaneseOcrEngine::new().expect("OCR engine init failed");
     let rois = RoundNumberRoiConfig::default();
 
-    for (fixture, expected_round) in ROUND_END_FIXTURES {
-        let raw = load_fixture("round_end", fixture);
-        let game = crop_titlebar(&raw);
+    let raw = load_fixture("round_select_pro_1602x932.png");
+    let game = crop_titlebar(&raw);
 
-        let text = ocr_roi(&engine, &game, &rois.round_end);
-        let is_end = is_round_end_text(&text);
-        let round_num = parse(&text);
+    let text = ocr_roi(&engine, &game, &rois.select_header);
+    let is_select = is_round_select_text(&text);
+    let round = parse_select_header(&text);
 
-        eprintln!(
-            "{fixture} ({}x{}): is_end={is_end} round={round_num:?} ocr=\"{text}\"",
-            game.width(),
-            game.height()
-        );
+    eprintln!("is_select={is_select} round={round:?} ocr=\"{text}\"");
 
-        if !is_end || round_num != Some(*expected_round) {
-            eprintln!("  ** MISMATCH: expected round={expected_round}");
-        }
-    }
+    assert!(
+        is_select,
+        "header OCR should contain '自動周回中', got \"{text}\""
+    );
+    assert_eq!(
+        round,
+        Some(10),
+        "expected header round=10, got {round:?}, ocr=\"{text}\""
+    );
 }
 
-// ── Round select screen OCR ─────────────────────────────────────────
-
-const ROUND_SELECT_FIXTURES: &[&str] = &[
-    "round_select_1282x752.png",
-    "round_select_1368x800.png",
-    "round_select_1602x932.png",
-    "round_select_1922x1112.png",
-    "round_select_after_01.png",
-    "round_select_after_03.png",
-];
-
+/// Verify left/right panel ROI OCR contains "ラウンド" text.
 #[cfg_attr(miri, ignore)]
 #[test]
-#[ignore = "Windows-only OCR integration test"]
-fn ocr_round_select_all_resolutions() {
+fn ocr_round_select_panels() {
     let engine = JapaneseOcrEngine::new().expect("OCR engine init failed");
     let rois = RoundNumberRoiConfig::default();
 
-    for fixture in ROUND_SELECT_FIXTURES {
-        let raw = load_fixture("round_select", fixture);
-        let game = crop_titlebar(&raw);
+    let raw = load_fixture("round_select_pro_1602x932.png");
+    let game = crop_titlebar(&raw);
 
-        let header_text = ocr_roi(&engine, &game, &rois.select_header);
-        let is_select = is_round_select_text(&header_text);
-        let header_round = parse_select_header(&header_text);
+    let left_text = ocr_roi(&engine, &game, &rois.select_completed_round);
+    let left_round = parse(&left_text);
 
-        let right_text = ocr_roi(&engine, &game, &rois.select_next_round);
-        let right_round = parse(&right_text);
+    let right_text = ocr_roi(&engine, &game, &rois.select_next_round);
+    let right_round = parse(&right_text);
 
-        let left_text = ocr_roi(&engine, &game, &rois.select_completed_round);
-        let left_round = parse(&left_text);
+    eprintln!("left:  round={left_round:?} ocr=\"{left_text}\"");
+    eprintln!("right: round={right_round:?} ocr=\"{right_text}\"");
 
-        eprintln!("{fixture} ({}x{}):", game.width(), game.height());
-        eprintln!(
-            "  header: is_select={is_select} header_round={header_round:?} ocr=\"{header_text}\""
-        );
-        eprintln!("  right:  round={right_round:?} ocr=\"{right_text}\"");
-        eprintln!("  left:   round={left_round:?} ocr=\"{left_text}\"");
+    let left_norm: String = left_text.chars().filter(|c| !c.is_whitespace()).collect();
+    let right_norm: String = right_text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(
+        left_norm.contains("ラウンド") || right_norm.contains("ラウンド"),
+        "neither panel OCR contains 'ラウンド' (left=\"{left_text}\", right=\"{right_text}\")"
+    );
+}
 
-        assert!(
-            is_select,
-            "{fixture}: expected is_select=true, ocr=\"{header_text}\""
-        );
-    }
+// ── Result screen OCR ───────────────────────────────────────────────
+
+/// Verify "依頼終了" is recognized from result screen fixtures.
+#[cfg_attr(miri, ignore)]
+#[test]
+fn ocr_result_screen() {
+    use dna_detector::config::ResultScreenRoiConfig;
+
+    let engine = JapaneseOcrEngine::new().expect("OCR engine init failed");
+    let roi = ResultScreenRoiConfig::default().text;
+
+    let fixture = "result_1602x932.png";
+    let path = format!(
+        "{}/../crates/dna-detector/tests/fixtures/result/{fixture}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let raw = image::open(&path).expect("load").to_rgba8();
+    let game = crop_titlebar(&raw);
+
+    let text = ocr_roi(&engine, &game, &roi);
+    let norm: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+
+    eprintln!("{fixture}: ocr=\"{text}\"");
+    assert!(
+        norm.contains("依頼終了"),
+        "{fixture}: expected '依頼終了', got \"{text}\""
+    );
 }

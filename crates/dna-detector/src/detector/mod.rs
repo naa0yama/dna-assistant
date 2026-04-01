@@ -1,6 +1,7 @@
 //! Detection pipeline: analyze game frames and emit events.
 
 pub mod dialog;
+pub mod result;
 pub mod round;
 
 use image::RgbaImage;

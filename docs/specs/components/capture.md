@@ -5,7 +5,6 @@
 > 関連ドキュメント:
 >
 > - [RoundDetector](./round-detector.md)
-> - [SkillDetector](./skill-detector.md)
 
 ## 1.1 背景
 
@@ -205,6 +204,7 @@ windows = { version = "0.62", features = ["Win32_UI_WindowsAndMessaging", "Win32
 
 | クレート          | バージョン | 用途                                                                      | プラットフォーム       |
 | ----------------- | ---------- | ------------------------------------------------------------------------- | ---------------------- |
+| `dna-detector`    | path       | `OcrEngine` トレイト実装のため依存                                        | クロスプラットフォーム |
 | `windows-capture` | `1.5`      | WGC ラッパー(プライマリキャプチャ)                                        | Windows                |
 | `win-screenshot`  | `4.0`      | `PrintWindow` ラッパー(フォールバック)                                    | Windows                |
 | `windows`         | `0.62`     | Win32 API (HWND 取得)、OCR (`Windows.Media.Ocr`、`Windows.Globalization`) | Windows                |
@@ -289,7 +289,7 @@ impl JapaneseOcrEngine {
 }
 ```
 
-内部で RGBA → BGRA 変換を行い、`Windows.Media.Ocr.OcrEngine` へ渡す。OCR 用の ROI 切り出しは呼び出し元(`src-tauri` の `run_ocr()`)が `RoiDefinition::crop()` で行う。
+`JapaneseOcrEngine` は `dna_detector::ocr::OcrEngine` トレイトを実装しており、`ResultScreenDetector` 等の Detector に `&dyn OcrEngine` として注入できる。内部で二値化(閾値 `140`)と RGBA → BGRA 変換を行い、`Windows.Media.Ocr.OcrEngine` へ渡す。OCR 用の ROI 切り出しは呼び出し元(`src-tauri` の `run_ocr()` や `ResultScreenDetector`)が `RoiDefinition::crop()` で行う。
 
 ### ウィンドウ検索 API
 

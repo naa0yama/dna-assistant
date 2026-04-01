@@ -8,6 +8,7 @@ description = "Windows screen capture and OCR backends for DNA Online assistant"
 
 [dependencies]
 anyhow = { workspace = true }
+dna-detector = { path = "../dna-detector" }
 image = { workspace = true }
 tracing = { workspace = true }
 
