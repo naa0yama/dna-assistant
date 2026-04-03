@@ -580,26 +580,23 @@ impl NotificationManager {
             }
         };
 
-        // Build mention content if ID is provided and non-empty
-        let mention_content = mention_id
-            .filter(|id| !id.is_empty())
-            .map(|id| format!("<@{id}>"));
+        // Build text content: title (+ mention if configured).
+        // Discord notification preview only shows `content`, not embed fields.
+        let content = mention_id.filter(|id| !id.is_empty()).map_or_else(
+            || format!("**{title}**"),
+            |id| format!("<@{id}> **{title}**"),
+        );
 
         #[allow(clippy::option_if_let_else)] // Complex multipart vs json branches
         let result = if let Some(png_bytes) = image {
-            let mut payload_json = serde_json::json!({
+            let payload_json = serde_json::json!({
+                "content": content,
                 "embeds": [{
-                    "title": title,
                     "description": body,
                     "color": 5_814_783,
                     "image": { "url": "attachment://capture.png" }
                 }]
             });
-            if let Some(ref mention) = mention_content
-                && let Some(obj) = payload_json.as_object_mut()
-            {
-                obj.insert("content".into(), serde_json::json!(mention));
-            }
 
             let form = reqwest::blocking::multipart::Form::new()
                 .text(
@@ -616,18 +613,13 @@ impl NotificationManager {
 
             client.post(webhook_url).multipart(form).send()
         } else {
-            let mut payload = serde_json::json!({
+            let payload = serde_json::json!({
+                "content": content,
                 "embeds": [{
-                    "title": title,
                     "description": body,
                     "color": 5_814_783
                 }]
             });
-            if let Some(ref mention) = mention_content
-                && let Some(obj) = payload.as_object_mut()
-            {
-                obj.insert("content".into(), serde_json::json!(mention));
-            }
             client.post(webhook_url).json(&payload).send()
         };
 
