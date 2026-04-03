@@ -142,6 +142,9 @@ pub struct MonitorConfig {
     /// Whether to notify when capture frames stop arriving.
     #[serde(default = "default_true")]
     pub notify_capture_lost_enabled: bool,
+    /// Sustain duration for capture-lost before notification (sec).
+    #[serde(default = "default_capture_lost_sustain", with = "serde_duration_secs")]
+    pub notify_capture_lost_sustain: Duration,
     /// Suppress notifications when the game window is the foreground window.
     #[serde(default)]
     pub suppress_when_game_focused: bool,
@@ -187,6 +190,11 @@ const fn default_notification_max_repeat() -> u32 {
 }
 
 #[cfg(target_os = "windows")]
+const fn default_capture_lost_sustain() -> Duration {
+    Duration::from_secs(5)
+}
+
+#[cfg(target_os = "windows")]
 const fn default_confirmation_ratio() -> f64 {
     0.80
 }
@@ -219,6 +227,7 @@ impl Default for MonitorConfig {
             notify_roundtrip_red: true,
             notification_max_repeat: 5,
             notify_capture_lost_enabled: true,
+            notify_capture_lost_sustain: Duration::from_secs(5),
             suppress_when_game_focused: false,
             discord_enabled: false,
             discord_webhook_url: String::new(),
@@ -628,6 +637,7 @@ mod platform {
         let det_config = DetectionConfig::default();
         let mut notification_mgr = NotificationManager::new(&monitor_config);
         notification_mgr.set_latest_frame(latest_frame.clone());
+        let mut capture_fail_since: Option<Instant> = None;
         // Compute window size: confirmation_window / capture_interval, at least 1
         let window_size = monitor_config
             .confirmation_window
@@ -746,7 +756,7 @@ mod platform {
                 // Capture frame
                 let frame = match capturer.capture_frame() {
                     Ok(f) => {
-                        if consecutive_failures > 0 {
+                        if capture_fail_since.take().is_some() {
                             notification_mgr.reset_capture_lost();
                         }
                         consecutive_failures = 0;
@@ -756,11 +766,14 @@ mod platform {
                     Err(e) => {
                         consecutive_failures = consecutive_failures.saturating_add(1);
                         warn!(%e, consecutive_failures, "capture failed");
-                        if consecutive_failures >= monitor_config.max_capture_retries {
-                            error!("max capture retries exceeded, re-searching window");
-                            if had_successful_capture {
+                        if had_successful_capture {
+                            let fail_start = *capture_fail_since.get_or_insert_with(Instant::now);
+                            if fail_start.elapsed() >= monitor_config.notify_capture_lost_sustain {
                                 notification_mgr.notify_capture_lost();
                             }
+                        }
+                        if consecutive_failures >= monitor_config.max_capture_retries {
+                            error!("max capture retries exceeded, re-searching window");
                             break; // outer loop will re-search
                         }
                         if interruptible_sleep(monitor_config.capture_interval, &stop_flag) {
