@@ -1,7 +1,9 @@
 # Changelog
 
 ## [v0.1.2](https://github.com/naa0yama/dna-assistant/compare/v0.1.1...v0.1.2) - 2026-04-03
+
 ### Development Environment 🔧
+
 - ci: remove non-Windows targets from release build matrix by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/22
 - chore(deps): update github/codeql-action action to v4.35.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/23
 
