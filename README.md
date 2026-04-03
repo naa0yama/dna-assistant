@@ -1,36 +1,56 @@
-# Boilerplate-Rust
+# DNA Assistant
 
-![coverage](https://raw.githubusercontent.com/naa0yama/boilerplate-rust/badges/coverage.svg)
-![test execution time](https://raw.githubusercontent.com/naa0yama/boilerplate-rust/badges/time.svg)
+![coverage](https://raw.githubusercontent.com/naa0yama/dna-assistant/badges/coverage.svg)
+![test execution time](https://raw.githubusercontent.com/naa0yama/dna-assistant/badges/time.svg)
 
-Rust プロジェクトのための開発テンプレート
+Duet Night Abyss のスクリーンモニター & Windows Toast 通知アプリ
 
 ## 概要
 
-このプロジェクトは、Rust 開発を始めるためのボイラープレートです。Dev Containers に対応しており、VS Code での開発環境が簡単に構築できます。
+DNA Assistant は、Duet Night Abyss のゲーム画面を監視し、特定のイベントを検出して Windows Toast 通知で知らせるデスクトップアプリケーションです。Tauri v2 で構築されています。
+
+## アーキテクチャ
+
+マルチクレートワークスペース構成で、プラットフォームごとにクレートを分離しています。
+
+| クレート        | パス                   | プラットフォーム       | 役割                                         |
+| --------------- | ---------------------- | ---------------------- | -------------------------------------------- |
+| `dna-detector`  | `crates/dna-detector/` | クロスプラットフォーム | 検出ロジック (ROI, 色判定, 検出器)           |
+| `dna-capture`   | `crates/dna-capture/`  | Windows のみ           | スクリーンキャプチャ (WGC, PrintWindow), OCR |
+| `dna-assistant` | `src-tauri/`           | Windows のみ           | Tauri v2 アプリ (IPC, 通知, トレイ)          |
+
+フロントエンド: `ui/` — 静的 HTML + HTMX (CDN) + DaisyUI (CDN)、Node.js 不要。
+
+データフロー: `dna-capture` → `image::RgbaImage` → `dna-detector` → `DetectionEvent` → `src-tauri` (通知/UI)
 
 ## 必要要件
 
 - Docker
-- Visual Studio Code
-- VS Code Dev Containers 拡張機能
+- Visual Studio Code + Dev Containers 拡張機能
+
+> **Note:** Windows 専用クレート (`dna-capture`, `src-tauri`) は WSL2 / DevContainer 上ではビルドのみ可能です。実行・Tauri 開発には Windows ネイティブ環境が必要です。
 
 ## セットアップ
 
-1. リポジトリをクローン:
-
 ```bash
-git clone <repository-url>
-cd boilerplate-rust
+git clone https://github.com/naa0yama/dna-assistant.git
+cd dna-assistant
 ```
 
-2. VS Codeでプロジェクトを開く:
+VS Code のコマンドパレット (`Ctrl+Shift+P`) から「Dev Containers: Reopen in Container」を選択してください。
 
-```bash
-code .
+### Tauri v2 の build 環境
+
+```powershell
+# Step 1: MSVC Build Tools(C++ ワークロード付き)
+winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+
+# Step 2: Rust ツールチェーン
+mise install
+
+# Step 3: WebView2(Windows 10 1803+ / Windows 11 ではスキップ可)
+winget install --id Microsoft.EdgeWebView2Runtime
 ```
-
-3. VS Codeのコマンドパレット（`Ctrl+Shift+P` / `Cmd+Shift+P`）から「Dev Containers: Reopen in Container」を選択
 
 ## 使い方
 
@@ -39,39 +59,48 @@ code .
 ### 基本操作
 
 ```bash
-mise run build            # デバッグビルド
-mise run build:release    # リリースビルド
-mise run test             # テスト実行
-mise run test:watch       # TDD ウォッチモード
-mise run test:doc         # ドキュメントテスト
+mise run build              # デバッグビルド
+mise run build:release      # リリースビルド (Tauri バンドル)
+mise run test               # テスト実行 (ワークスペース全体)
+mise run test:core          # テスト実行 (dna-detector のみ, DevContainer OK)
+mise run test:watch         # TDD ウォッチモード
+mise run test:doc           # ドキュメントテスト
 ```
 
 ### コード品質
 
 ```bash
-mise run fmt              # フォーマット (cargo fmt + dprint)
-mise run fmt:check        # フォーマットチェック
-mise run clippy           # Lint
-mise run clippy:strict    # Lint (warnings をエラー扱い)
-mise run ast-grep         # ast-grep カスタムルールチェック
+mise run fmt                # フォーマット (cargo fmt + dprint)
+mise run fmt:check          # フォーマットチェック
+mise run clippy             # Lint
+mise run clippy:strict      # Lint (warnings をエラー扱い)
+mise run clippy:core        # Lint (dna-detector のみ, DevContainer OK)
+mise run ast-grep           # ast-grep カスタムルールチェック
 ```
 
 ### コミット前チェック
 
 ```bash
-mise run pre-commit       # clean:sweep + fmt:check + clippy:strict + ast-grep + lint:gh
+mise run pre-commit         # clean:sweep + fmt:check + clippy:strict + ast-grep + lint:gh
+```
+
+### DevContainer / WSL2 で使えるコマンド
+
+Windows 専用クレートに依存しないタスクです。
+
+```bash
+mise run check:core         # コンパイルチェック (dna-detector のみ)
+mise run test:core          # テスト (dna-detector のみ)
+mise run clippy:core        # Lint (dna-detector のみ)
+mise run miri:core          # Miri (dna-detector のみ)
 ```
 
 ## プロジェクト構造
 
 ```
 .
-├── .cargo/                     # Cargo設定
-│   └── config.toml
-├── .devcontainer/              # Dev Container設定
-│   ├── devcontainer.json       # Dev Container設定ファイル
-│   ├── initializeCommand.sh    # 初期化コマンド
-│   └── postStartCommand.sh     # 起動後コマンド
+├── .cargo/                     # Cargo 設定
+├── .devcontainer/              # Dev Container 設定
 ├── .githooks/                  # Git hooks (mise run 連携)
 │   ├── commit-msg              # Conventional Commits 検証
 │   ├── pre-commit              # コミット前チェック
@@ -79,92 +108,30 @@ mise run pre-commit       # clean:sweep + fmt:check + clippy:strict + ast-grep +
 ├── .github/                    # GitHub Actions & 設定
 │   ├── actions/                # カスタムアクション
 │   ├── rulesets/               # Protection rulesets
-│   ├── workflows/              # CI/CD ワークフロー
-│   ├── labeler.yml
-│   └── release.yml
-├── .vscode/                    # VS Code設定
-│   ├── launch.json             # デバッグ設定
-│   └── settings.json           # ワークスペース設定
+│   └── workflows/              # CI/CD ワークフロー
+├── .vscode/                    # VS Code 設定
 ├── ast-rules/                  # ast-grep プロジェクトルール
-├── crates/                     # ワークスペースクレート
-│   └── brust/                  # CLI バイナリクレート
-│       ├── src/
-│       │   ├── main.rs         # アプリケーションのエントリーポイント
-│       │   ├── libs.rs         # モジュール定義
-│       │   └── libs/
-│       │       └── hello.rs    # Helloモジュール
-│       ├── tests/
-│       │   └── integration_test.rs  # 統合テスト
-│       ├── build.rs            # ビルドスクリプト
-│       └── Cargo.toml          # クレート設定
+├── crates/
+│   ├── dna-capture/            # スクリーンキャプチャ (Windows のみ)
+│   └── dna-detector/           # 検出ロジック (クロスプラットフォーム)
 ├── docs/                       # ドキュメント
-├── .editorconfig               # エディター設定
-├── .gitignore                  # Git除外設定
-├── .octocov.yml                # カバレッジレポート設定
-├── .tagpr                      # タグ&リリース設定
-├── Cargo.lock                  # 依存関係のロックファイル
+│   └── specs/                  # 設計仕様書
+├── src-tauri/                  # Tauri v2 アプリ (Windows のみ)
+├── ui/                         # フロントエンド (HTML + HTMX + DaisyUI)
 ├── Cargo.toml                  # ワークスペース設定と共有依存関係
 ├── deny.toml                   # cargo-deny 設定
-├── Dockerfile                  # Dockerイメージ定義
-├── dprint.jsonc                # Dprint フォーマッター設定
-├── LICENSE                     # ライセンスファイル
+├── Dockerfile                  # Docker イメージ定義
+├── dprint.jsonc                # dprint フォーマッター設定
 ├── mise.toml                   # ツール管理 & タスクランナー
-├── README.md                   # このファイル
-├── renovate.json               # Renovate自動依存関係更新設定
-├── rust-toolchain.toml         # Rust toolchain バージョン固定
 └── sgconfig.yml                # ast-grep 設定ファイル
 ```
 
-## VSCode拡張機能
-
-このプロジェクトの Dev Containers には、Rust開発を効率化する以下の拡張機能が含まれています：
-
-### Rust開発
-
-- **[rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)** - Rust言語サポート（コード補完、エラー検出、リファクタリング）
-- **[CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb)** - Rustプログラムのデバッグサポート
-- **[Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)** - Cargo.tomlファイルのシンタックスハイライトとバリデーション
-
-### コード品質・フォーマット
-
-- **[Biome](https://marketplace.visualstudio.com/items?itemName=biomejs.biome)** - 高速なフォーマッターとリンター
-- **[dprint](https://marketplace.visualstudio.com/items?itemName=dprint.dprint)** - 高速なコードフォーマッター（設定ファイル: `dprint.jsonc`）
-- **[EditorConfig for VS Code](https://marketplace.visualstudio.com/items?itemName=EditorConfig.EditorConfig)** - エディター設定の統一
-- **[Error Lens](https://marketplace.visualstudio.com/items?itemName=usernamehw.errorlens)** - エラーと警告をインラインで表示
-
-### 開発支援
-
-- **[Claude Code for VSCode](https://marketplace.visualstudio.com/items?itemName=Anthropic.claude-code)** - AIアシスタントによるコーディング支援
-- **[Calculate](https://marketplace.visualstudio.com/items?itemName=acarreiro.calculate)** - 選択したテキストの計算式を評価
-- **[indent-rainbow](https://marketplace.visualstudio.com/items?itemName=oderwat.indent-rainbow)** - インデントレベルを色分け表示
-- **[Local History](https://marketplace.visualstudio.com/items?itemName=xyz.local-history)** - ファイルの変更履歴をローカルに保存
-
-### テキスト編集
-
-- **[lowercase](https://marketplace.visualstudio.com/items?itemName=ruiquelhas.vscode-lowercase)** - 選択テキストを小文字に変換
-- **[uppercase](https://marketplace.visualstudio.com/items?itemName=ruiquelhas.vscode-uppercase)** - 選択テキストを大文字に変換
-- **[Markdown All in One](https://marketplace.visualstudio.com/items?itemName=yzhang.markdown-all-in-one)** - Markdownファイルの編集支援
-
 ## ライセンス
 
-このプロジェクトは [LICENSE](./LICENSE) ファイルに記載されているライセンスの下で公開されています。
+このプロジェクトは [AGPL-3.0](./LICENSE) ライセンスの下で公開されています。
 
 ### サードパーティライセンスについて
 
 Dev Container の起動時に [OpenObserve Enterprise Edition](https://openobserve.ai/) が自動的にダウンロード・インストールされます。Enterprise 版は MCP (Model Context Protocol) サーバー機能など OSS 版にはない付加機能を備えているため採用しています。Enterprise 版は 200GB/Day のインジェストクォータ内であれば無料で利用できます。
 
 OpenObserve Enterprise Edition は [EULA (End User License Agreement)](https://openobserve.ai/enterprise-license/) の下で提供されており、OSS 版 (AGPL-3.0) とはライセンスが異なります。Enterprise 版の機能一覧は [OpenObserve Enterprise](https://openobserve.ai/docs/features/enterprise/) を参照してください。
-
-## 参考資料
-
-- [The Rust Programming Language 日本語版](https://doc.rust-jp.rs/book-ja/)
-- [Developing inside a Container](https://code.visualstudio.com/docs/devcontainers/containers)
-- [Cargo Documentation](https://doc.rust-lang.org/cargo/)
-
-## Troubleshooting
-
-### Rust debug
-
-```bash
-RUST_LOG=trace RUST_BACKTRACE=1 cargo run -- help
-```

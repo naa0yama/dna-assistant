@@ -5,6 +5,7 @@
 		"dockerfile": "../Dockerfile",
 		"target": "development",
 		"args": {
+			"MISE_ENV": "devcontainer",
 			"TZ": "${localEnv:TZ:Asia/Tokyo}",
 			"USER_GID": "1100",
 			"USER_UID": "1100"

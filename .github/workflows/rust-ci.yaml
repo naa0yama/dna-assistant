@@ -66,6 +66,13 @@ jobs:
           restore-keys: |
             dprint-v1-${{ runner.os }}-${{ runner.arch }}-
 
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf
+
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           cache: false
@@ -132,7 +139,7 @@ jobs:
       - name: Check compilation for ${{ matrix.target }}
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo check --target "${TARGET}"
+        run: cargo check -p dna-detector -p dna-capture --target "${TARGET}"
 
   test:
     name: test
@@ -162,6 +169,13 @@ jobs:
           key: mise-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
           restore-keys: |
             mise-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:

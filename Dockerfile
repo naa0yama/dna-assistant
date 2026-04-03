@@ -70,7 +70,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 	musl-tools \
 	nano \
 	sudo \
-	wget
+	wget \
+	# Tauri v2 Linux dependencies
+	file \
+	libayatana-appindicator3-dev \
+	libgtk-3-dev \
+	libjavascriptcoregtk-4.1-dev \
+	librsvg2-dev \
+	libsoup-3.0-dev \
+	libssl-dev \
+	libwebkit2gtk-4.1-dev \
+	patchelf
 
 RUN echo "**** Create user ****" && \
 	set -euxo pipefail && \
