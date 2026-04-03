@@ -1,5 +1,30 @@
 # Changelog
 
+## [v0.1.0](https://github.com/naa0yama/dna-assistant/commits/v0.1.0) - 2026-04-03
+
+### Documentation 🗒️
+
+- feat(dna-detector): add round and skill detection pipeline by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/4
+
+### Dependency Updates 📦
+
+- Lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/9
+
+### Development Environment 🔧
+
+- Update taiki-e/install-action action to v2.69.5 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/3
+- Update taiki-e/install-action action to v2.69.6 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/6
+- Update jdx/mise-action action to v4.0.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/7
+- Update taiki-e/install-action action to v2.69.7 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/11
+- Update taiki-e/install-action action to v2.69.8 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/12
+- Update taiki-e/install-action action to v2.69.9 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/13
+- Update taiki-e/install-action action to v2.69.10 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/14
+- Update dependency openobserve/openobserve to v0.70.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/15
+- Update dependency dprint to v0.53.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/16
+- Update taiki-e/install-action action to v2.69.11 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/17
+- Update taiki-e/install-action action to v2.69.12 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/18
+- chore(deps): update dependency openobserve/openobserve to v0.70.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/19
+
 ## [v0.1.1](https://github.com/naa0yama/boilerplate-rust/compare/v0.1.0...v0.1.1) - 2026-03-27
 
 ### Documentation 🗒️
