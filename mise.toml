@@ -211,6 +211,7 @@ git worktree add --detach "${tmp}"
 git -C "${tmp}" config --local --unset core.hookspath 2>/dev/null || true
 cd "${tmp}"
 git checkout --orphan badges
+git rm -rf . > /dev/null 2>&1
 git clean -fd > /dev/null 2>&1
 
 # Empty placeholders — octocov overwrites these on first CI run
