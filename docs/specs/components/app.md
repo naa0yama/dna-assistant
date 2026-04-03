@@ -177,16 +177,16 @@ async fn save_settings(app_handle: AppHandle, state: State<'_, MonitorState>, co
 
 detection-overview.md セクション 1.6 で定義されたトリガーを実装する。
 
-| トリガー              | 条件                            | 持続時間 | クールダウン | 優先度 | 通知タイトル          |
-| --------------------- | ------------------------------- | -------- | ------------ | ------ | --------------------- |
-| ダイアログ表示        | `DialogVisible` が持続          | 3 秒     | 60 秒        | 高     | "ダイアログ検出"      |
-| ラウンド完了          | `RoundGone` が持続              | 5 秒     | 10 秒        | 中     | "ラウンド完了"        |
-| 依頼完了(OCR)         | `ResultScreenVisible` 確定      | 0 秒     | 10 秒        | 中     | "依頼完了"            |
-| RoundTrip Green 超過  | RoundTrip 経過 >= Green 閾値    | 0 秒     | 10 秒        | 中     | "RoundTrip: Green"    |
-| RoundTrip Yellow 超過 | RoundTrip 経過 >= Yellow 閾値   | 0 秒     | 10 秒        | 高     | "RoundTrip: Yellow"   |
-| RoundTrip Red 超過    | RoundTrip 経過 >= Red 閾値      | 0 秒     | 10 秒        | 高     | "RoundTrip: Red"      |
-| キャプチャ停止        | 連続キャプチャ失敗 >= 閾値      | 0 秒     | 60 秒        | 高     | "キャプチャ停止"      |
-| キャプチャ復帰        | キャプチャ停止後にフレーム取得成功 | —        | —            | 中     | "キャプチャ復帰"      |
+| トリガー              | 条件                               | 持続時間 | クールダウン | 優先度 | 通知タイトル        |
+| --------------------- | ---------------------------------- | -------- | ------------ | ------ | ------------------- |
+| ダイアログ表示        | `DialogVisible` が持続             | 3 秒     | 60 秒        | 高     | "ダイアログ検出"    |
+| ラウンド完了          | `RoundGone` が持続                 | 5 秒     | 10 秒        | 中     | "ラウンド完了"      |
+| 依頼完了(OCR)         | `ResultScreenVisible` 確定         | 0 秒     | 10 秒        | 中     | "依頼完了"          |
+| RoundTrip Green 超過  | RoundTrip 経過 >= Green 閾値       | 0 秒     | 10 秒        | 中     | "RoundTrip: Green"  |
+| RoundTrip Yellow 超過 | RoundTrip 経過 >= Yellow 閾値      | 0 秒     | 10 秒        | 高     | "RoundTrip: Yellow" |
+| RoundTrip Red 超過    | RoundTrip 経過 >= Red 閾値         | 0 秒     | 10 秒        | 高     | "RoundTrip: Red"    |
+| キャプチャ停止        | 連続キャプチャ失敗 >= 閾値         | 0 秒     | 60 秒        | 高     | "キャプチャ停止"    |
+| キャプチャ復帰        | キャプチャ停止後にフレーム取得成功 | —        | —            | 中     | "キャプチャ復帰"    |
 
 繰り返し通知(RoundTrip 最高レベル、キャプチャ停止)は `notification_max_repeat` (デフォルト 5) 回まで送信する。`notify_result_screen()` は `TransitionFilter` による確定後に呼び出される。キャプチャ停止/復帰は Discord ON でも常に Windows Toast + Discord の両方に送信する。
 
