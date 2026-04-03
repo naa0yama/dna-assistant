@@ -1,11 +1,10 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 {
-	"name": "Rust(brust)",
+	"name": "Rust(dna-asst)",
 	"build": {
 		"dockerfile": "../Dockerfile",
 		"target": "development",
 		"args": {
-			"MISE_ENV": "devcontainer",
 			"TZ": "${localEnv:TZ:Asia/Tokyo}",
 			"USER_GID": "1100",
 			"USER_UID": "1100"
@@ -66,6 +65,9 @@
 		}
 	},
 	"otherPortsAttributes": { "onAutoForward": "ignore" },
+	"containerEnv": {
+		"MISE_ENV": "devcontainer"
+	},
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
 	"remoteUser": "cuser",
 	"workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind,consistency=delegated",
