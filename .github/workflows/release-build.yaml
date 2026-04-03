@@ -60,7 +60,7 @@ jobs:
           auditable_version=$(grep -E 'cargo-auditable' mise.toml | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
 
           # For workspace projects, find the CLI crate that defines the [[bin]] target
-          cli_toml="crates/brust/Cargo.toml"
+          cli_toml="src-tauri/Cargo.toml"
           if grep -q '^\[\[bin\]\]' "$cli_toml"; then
             binary_name=$(grep -E '^\[\[bin\]\]' -A 5 "$cli_toml" | grep -E '^name = "' | head -n 1 | sed -E 's/name = "(.*)"/\1/')
           else
