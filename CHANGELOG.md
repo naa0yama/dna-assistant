@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.1.1](https://github.com/naa0yama/dna-assistant/compare/v0.1.0...v0.1.1) - 2026-04-03
+
+### Development Environment 🔧
+
+- fix(ci): correct cli_toml path in release-build workflow by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/20
+
 ## [v0.1.0](https://github.com/naa0yama/dna-assistant/commits/v0.1.0) - 2026-04-03
 
 ### Documentation 🗒️
