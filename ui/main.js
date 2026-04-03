@@ -388,7 +388,7 @@ function populateSettings(config) {
 const MS_KEYS = new Set([
   "capture_interval", "window_search_interval", "preview_interval",
 ]);
-const INT_KEYS = new Set(["max_capture_retries"]);
+const INT_KEYS = new Set(["max_capture_retries", "notification_max_repeat"]);
 const STRING_KEYS = new Set(["discord_webhook_url", "discord_mention_id"]);
 
 // Sidebar Discord toggle (outside settings form)

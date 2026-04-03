@@ -133,9 +133,15 @@ pub struct MonitorConfig {
     /// Notify when `RoundTrip` exceeds Red threshold.
     #[serde(default = "default_true")]
     pub notify_roundtrip_red: bool,
-    /// Maximum number of repeat notifications for the highest `RoundTrip` threshold.
-    #[serde(default = "default_roundtrip_max_repeat")]
-    pub roundtrip_max_repeat: u32,
+    /// Maximum number of repeat notifications (shared by `RoundTrip` and `CaptureLost`).
+    #[serde(
+        default = "default_notification_max_repeat",
+        alias = "roundtrip_max_repeat"
+    )]
+    pub notification_max_repeat: u32,
+    /// Whether to notify when capture frames stop arriving.
+    #[serde(default = "default_true")]
+    pub notify_capture_lost_enabled: bool,
     /// Suppress notifications when the game window is the foreground window.
     #[serde(default)]
     pub suppress_when_game_focused: bool,
@@ -176,7 +182,7 @@ const fn default_roundtrip_red() -> Duration {
 }
 
 #[cfg(target_os = "windows")]
-const fn default_roundtrip_max_repeat() -> u32 {
+const fn default_notification_max_repeat() -> u32 {
     5
 }
 
@@ -211,12 +217,21 @@ impl Default for MonitorConfig {
             notify_roundtrip_green: false,
             notify_roundtrip_yellow: false,
             notify_roundtrip_red: true,
-            roundtrip_max_repeat: 5,
+            notification_max_repeat: 5,
+            notify_capture_lost_enabled: true,
             suppress_when_game_focused: false,
             discord_enabled: false,
             discord_webhook_url: String::new(),
             discord_mention_id: String::new(),
         }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl MonitorConfig {
+    /// Whether Discord webhook notifications are configured and enabled.
+    pub const fn is_discord_active(&self) -> bool {
+        self.discord_enabled && !self.discord_webhook_url.is_empty()
     }
 }
 
@@ -712,6 +727,7 @@ mod platform {
                 };
 
             let mut consecutive_failures: u32 = 0;
+            let mut had_successful_capture = false;
             let capture_info = CaptureInfo {
                 window_name: String::from(dna_capture::window::GAME_WINDOW_TITLE),
                 width: 0,
@@ -730,7 +746,11 @@ mod platform {
                 // Capture frame
                 let frame = match capturer.capture_frame() {
                     Ok(f) => {
+                        if consecutive_failures > 0 {
+                            notification_mgr.reset_capture_lost();
+                        }
                         consecutive_failures = 0;
+                        had_successful_capture = true;
                         f
                     }
                     Err(e) => {
@@ -738,6 +758,9 @@ mod platform {
                         warn!(%e, consecutive_failures, "capture failed");
                         if consecutive_failures >= monitor_config.max_capture_retries {
                             error!("max capture retries exceeded, re-searching window");
+                            if had_successful_capture {
+                                notification_mgr.notify_capture_lost();
+                            }
                             break; // outer loop will re-search
                         }
                         if interruptible_sleep(monitor_config.capture_interval, &stop_flag) {

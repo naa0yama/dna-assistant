@@ -29,6 +29,7 @@ enum TriggerKind {
     RoundTripGreen,
     RoundTripYellow,
     RoundTripRed,
+    CaptureLost,
 }
 
 /// Configuration for a notification trigger.
@@ -82,6 +83,12 @@ const fn trigger_config(kind: TriggerKind, cfg: &MonitorConfig) -> TriggerConfig
             title: "RoundTrip: Red",
             body: "設定 Red より時間がかかっています",
         },
+        TriggerKind::CaptureLost => TriggerConfig {
+            sustain_duration: Duration::from_secs(0),
+            cooldown: cfg.notification_cooldown,
+            title: "キャプチャ停止",
+            body: "ウィンドウのキャプチャに失敗しました。最小化されていないか確認してください",
+        },
     }
 }
 
@@ -102,6 +109,8 @@ pub struct NotificationManager {
     round_notified: bool,
     /// How many times the highest `RoundTrip` threshold has repeated.
     roundtrip_repeat_count: u32,
+    /// How many times `CaptureLost` has repeated.
+    capture_lost_repeat_count: u32,
     /// Current round number (set externally from monitor loop).
     current_round: Option<u32>,
     /// Latest captured frame for Discord screenshot attachment.
@@ -119,6 +128,7 @@ impl NotificationManager {
             round_was_visible: false,
             round_notified: false,
             roundtrip_repeat_count: 0,
+            capture_lost_repeat_count: 0,
             current_round: None,
             latest_frame: None,
             config: config.clone(),
@@ -161,7 +171,7 @@ impl NotificationManager {
             // Highest level: repeat at its own threshold interval.
             // e.g., Red=90s → fires at 90s, 180s, 270s...
             // Limited to max_repeat times.
-            if self.roundtrip_repeat_count >= self.config.roundtrip_max_repeat {
+            if self.roundtrip_repeat_count >= self.config.notification_max_repeat {
                 return;
             }
             let threshold = self.threshold_for(kind);
@@ -209,6 +219,54 @@ impl NotificationManager {
         self.last_notified.remove(&TriggerKind::RoundTripGreen);
         self.last_notified.remove(&TriggerKind::RoundTripYellow);
         self.last_notified.remove(&TriggerKind::RoundTripRed);
+    }
+
+    /// Notify capture frame loss (called when consecutive failures exceed threshold).
+    #[instrument(skip_all)]
+    pub fn notify_capture_lost(&mut self) {
+        let kind = TriggerKind::CaptureLost;
+
+        if !self.is_trigger_enabled(kind) {
+            debug!("capture lost notification suppressed: disabled");
+            return;
+        }
+
+        if self.capture_lost_repeat_count >= self.config.notification_max_repeat {
+            debug!("capture lost notification suppressed: max repeat reached");
+            return;
+        }
+
+        let now = Instant::now();
+        let tc = trigger_config(kind, &self.config);
+
+        if let Some(&last) = self.last_notified.get(&kind)
+            && now.duration_since(last) < tc.cooldown
+        {
+            debug!("capture lost notification suppressed: cooldown");
+            return;
+        }
+
+        // Skip game-focus suppression: the game window is likely not visible.
+        // Always send Windows toast (critical alert), plus Discord if enabled.
+        self.send_toast_and_discord(tc.title, tc.body, true);
+        self.last_notified.insert(kind, now);
+        self.capture_lost_repeat_count = self.capture_lost_repeat_count.saturating_add(1);
+    }
+
+    /// Reset `CaptureLost` state and notify recovery if a lost notification was sent.
+    #[instrument(skip_all)]
+    pub fn reset_capture_lost(&mut self) {
+        let was_notified = self.capture_lost_repeat_count > 0;
+        self.capture_lost_repeat_count = 0;
+        self.last_notified.remove(&TriggerKind::CaptureLost);
+
+        if was_notified && self.is_trigger_enabled(TriggerKind::CaptureLost) {
+            self.send_toast_and_discord(
+                "キャプチャ復帰",
+                "ウィンドウのキャプチャが復帰しました",
+                false,
+            );
+        }
     }
 
     /// Process detection events and send notifications if trigger conditions are met.
@@ -271,6 +329,7 @@ impl NotificationManager {
             TriggerKind::RoundTripGreen => self.config.notify_roundtrip_green,
             TriggerKind::RoundTripYellow => self.config.notify_roundtrip_yellow,
             TriggerKind::RoundTripRed => self.config.notify_roundtrip_red,
+            TriggerKind::CaptureLost => self.config.notify_capture_lost_enabled,
         }
     }
 
@@ -390,7 +449,7 @@ impl NotificationManager {
 
     /// Send notification with optional screenshot and mention (Discord only).
     fn send_notification_with_image(&self, title: &str, body: &str, mention: bool) {
-        if self.config.discord_enabled && !self.config.discord_webhook_url.is_empty() {
+        if self.config.is_discord_active() {
             let image_data = self.capture_screenshot();
             let mention_id = if mention {
                 Some(self.config.discord_mention_id.as_str())
@@ -406,6 +465,28 @@ impl NotificationManager {
             );
         } else {
             Self::send_toast(title, body);
+        }
+    }
+
+    /// Send Windows toast AND Discord webhook (when configured).
+    ///
+    /// Unlike [`send_notification_with_image`] (which sends to one or the other),
+    /// this always sends a toast and optionally adds a Discord message.
+    fn send_toast_and_discord(&self, title: &str, body: &str, mention: bool) {
+        Self::send_toast(title, body);
+        if self.config.is_discord_active() {
+            let mention_id = if mention {
+                Some(self.config.discord_mention_id.as_str())
+            } else {
+                None
+            };
+            Self::send_discord(
+                &self.config.discord_webhook_url,
+                title,
+                body,
+                None,
+                mention_id,
+            );
         }
     }
 
@@ -459,7 +540,7 @@ impl NotificationManager {
     pub fn send_test_notification(config: &MonitorConfig) {
         let title = "DNA Assistant テスト";
         let body = "通知が正常に動作しています";
-        if config.discord_enabled && !config.discord_webhook_url.is_empty() {
+        if config.is_discord_active() {
             let mention_id = if config.discord_mention_id.is_empty() {
                 None
             } else {

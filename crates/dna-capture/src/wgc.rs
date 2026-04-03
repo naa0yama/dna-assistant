@@ -142,12 +142,12 @@ impl Capturer {
 impl Capture for Capturer {
     #[instrument(skip(self))]
     fn capture_frame(&mut self) -> Result<RgbaImage> {
-        let state = self
+        let mut state = self
             .state
             .lock()
             .map_err(|e| anyhow::anyhow!("shared frame state lock poisoned: {e}"))?;
 
-        match state.latest_frame.clone() {
+        match state.latest_frame.take() {
             Some(frame) => Ok(frame),
             None => bail!("no frame available yet from WGC"),
         }
