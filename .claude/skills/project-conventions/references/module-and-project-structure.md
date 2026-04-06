@@ -34,7 +34,10 @@ dna-assistant/
 │       ├── lib.rs             # Tauri builder + commands
 │       ├── commands.rs        # IPC command handlers
 │       ├── monitor.rs         # Capture → detect → notify loop
-│       └── notification.rs    # Toast notification manager
+│       ├── notification.rs    # Toast notification manager
+│       ├── settings.rs        # Settings persistence (JSON)
+│       ├── metrics.rs         # OTel AppMetrics (cfg(windows))
+│       └── telemetry.rs       # Tracing/OTel init + process metrics
 ├── ui/                        # Static frontend (DevContainer OK)
 │   ├── index.html
 │   ├── main.js

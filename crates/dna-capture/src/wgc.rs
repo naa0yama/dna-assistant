@@ -22,28 +22,34 @@ use windows_capture::window::Window;
 use crate::Capture;
 use crate::window;
 
-/// Shared state between the WGC callback handler and the [`Capturer`] owner.
-#[derive(Debug, Default)]
-struct SharedFrameState {
+/// Shared state and callbacks passed from [`Capturer`] into the WGC handler thread.
+struct HandlerContext {
     /// Latest captured frame, replaced on each `on_frame_arrived` callback.
-    latest_frame: Option<RgbaImage>,
+    latest_frame: Mutex<Option<RgbaImage>>,
+    /// Called on every frame arrival; used for `wgc.frames_received` metrics.
+    on_frame: Box<dyn Fn() + Send + Sync + 'static>,
+}
+
+impl std::fmt::Debug for HandlerContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HandlerContext").finish_non_exhaustive()
+    }
 }
 
 /// Internal handler implementing [`GraphicsCaptureApiHandler`].
 ///
-/// Stores captured frames into shared state accessible via
-/// [`CaptureControl::callback()`].
+/// Receives WGC frame callbacks and stores frames into shared state.
 struct Handler {
-    state: Arc<Mutex<SharedFrameState>>,
+    ctx: Arc<HandlerContext>,
 }
 
 impl GraphicsCaptureApiHandler for Handler {
-    type Flags = Arc<Mutex<SharedFrameState>>;
+    type Flags = Arc<HandlerContext>;
     type Error = anyhow::Error;
 
     fn new(ctx: Context<Self::Flags>) -> Result<Self> {
         debug!("WGC handler initialized");
-        Ok(Self { state: ctx.flags })
+        Ok(Self { ctx: ctx.flags })
     }
 
     fn on_frame_arrived(
@@ -65,11 +71,12 @@ impl GraphicsCaptureApiHandler for Handler {
         let image = RgbaImage::from_raw(width, height, pixels)
             .context("failed to construct RgbaImage from WGC frame")?;
 
-        let Ok(mut state) = self.state.lock() else {
+        let Ok(mut latest) = self.ctx.latest_frame.lock() else {
             warn!("shared frame state lock poisoned");
             return Ok(());
         };
-        state.latest_frame = Some(image);
+        *latest = Some(image);
+        (self.ctx.on_frame)();
 
         Ok(())
     }
@@ -84,11 +91,16 @@ impl GraphicsCaptureApiHandler for Handler {
 ///
 /// Launches a background capture thread that receives frame callbacks from WGC.
 /// [`Capture::capture_frame`] returns the most recently received frame.
+///
+/// On drop, the `on_drop` callback is invoked and `CaptureControl::stop` is
+/// called explicitly to join the capture thread.
 pub struct Capturer {
     hwnd: HWND,
-    state: Arc<Mutex<SharedFrameState>>,
-    #[allow(dead_code)] // kept alive to maintain the capture session
-    control: CaptureControl<Handler, anyhow::Error>,
+    ctx: Arc<HandlerContext>,
+    /// Wrapped in `Option` so `Drop` can take ownership for `CaptureControl::stop`.
+    control: Option<CaptureControl<Handler, anyhow::Error>>,
+    /// Called once when this `Capturer` is dropped; used for metrics.
+    on_drop: Box<dyn Fn() + Send + 'static>,
 }
 
 impl std::fmt::Debug for Capturer {
@@ -99,8 +111,23 @@ impl std::fmt::Debug for Capturer {
     }
 }
 
+impl Drop for Capturer {
+    fn drop(&mut self) {
+        (self.on_drop)();
+        if let Some(control) = self.control.take() {
+            if let Err(e) = control.stop() {
+                warn!(?e, "WGC capture session stop error on drop");
+            }
+        }
+    }
+}
+
 impl Capturer {
     /// Start a new WGC capture session for the given window.
+    ///
+    /// `on_frame` is called on every captured frame (WGC background thread).
+    /// `on_drop` is called once when this [`Capturer`] is dropped (caller thread).
+    /// Pass `|| {}` for either parameter when no instrumentation is needed.
     ///
     /// The yellow capture border is disabled via
     /// [`DrawBorderSettings::WithoutBorder`] (requires Windows 10 Build 20348+).
@@ -109,11 +136,18 @@ impl Capturer {
     ///
     /// Returns an error if the WGC session cannot be started (e.g., window not
     /// found, unsupported OS version, or API failure).
-    #[instrument]
-    pub fn start(hwnd: HWND) -> Result<Self> {
+    #[instrument(skip(on_frame, on_drop))]
+    pub fn start(
+        hwnd: HWND,
+        on_frame: impl Fn() + Send + Sync + 'static,
+        on_drop: impl Fn() + Send + 'static,
+    ) -> Result<Self> {
         let window = Window::from_raw_hwnd(hwnd.0);
 
-        let state = Arc::new(Mutex::new(SharedFrameState::default()));
+        let ctx = Arc::new(HandlerContext {
+            latest_frame: Mutex::new(None),
+            on_frame: Box::new(on_frame),
+        });
 
         let settings = Settings::new(
             window,
@@ -123,7 +157,7 @@ impl Capturer {
             MinimumUpdateIntervalSettings::Default,
             DirtyRegionSettings::Default,
             ColorFormat::Rgba8,
-            state.clone(),
+            Arc::clone(&ctx),
         );
 
         let control = Handler::start_free_threaded(settings)
@@ -133,8 +167,9 @@ impl Capturer {
 
         Ok(Self {
             hwnd,
-            state,
-            control,
+            ctx,
+            control: Some(control),
+            on_drop: Box::new(on_drop),
         })
     }
 }
@@ -142,12 +177,13 @@ impl Capturer {
 impl Capture for Capturer {
     #[instrument(skip(self))]
     fn capture_frame(&mut self) -> Result<RgbaImage> {
-        let mut state = self
-            .state
+        let mut latest = self
+            .ctx
+            .latest_frame
             .lock()
             .map_err(|e| anyhow::anyhow!("shared frame state lock poisoned: {e}"))?;
 
-        match state.latest_frame.take() {
+        match latest.take() {
             Some(frame) => Ok(frame),
             None => bail!("no frame available yet from WGC"),
         }

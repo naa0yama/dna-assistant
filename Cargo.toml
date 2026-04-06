@@ -39,8 +39,12 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 opentelemetry = { version = "0.31" }
 opentelemetry-appender-tracing = { version = "0.31" }
 opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "logs", "metrics", "http-proto", "reqwest-blocking-client"] }
+opentelemetry-semantic-conventions = { version = "0.31" }
 opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace", "logs", "metrics"] }
 tracing-opentelemetry = { version = "0.32", default-features = false }
+
+# Process metrics
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 
 # Dev dependencies
 assert_cmd = "=2.2.0"

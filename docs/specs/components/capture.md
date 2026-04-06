@@ -265,6 +265,34 @@ pub enum CaptureBackend {
 }
 ```
 
+### wgc::Capturer API
+
+```rust
+/// Screen capture backend using the Windows Graphics Capture API.
+pub struct Capturer { /* ... */ }
+
+impl Capturer {
+    /// Start a new WGC capture session for the given window.
+    ///
+    /// `on_frame` is called on every captured frame (WGC background thread).
+    /// `on_drop` is called once when this Capturer is dropped (caller thread).
+    /// Pass `|| {}` for either parameter when no instrumentation is needed.
+    pub fn start(
+        hwnd: HWND,
+        on_frame: impl Fn() + Send + Sync + 'static,
+        on_drop: impl Fn() + Send + 'static,
+    ) -> Result<Self>;
+}
+
+impl Drop for Capturer {
+    /// Invokes `on_drop`, then calls `CaptureControl::stop` to join the
+    /// WGC background thread.
+    fn drop(&mut self);
+}
+```
+
+`on_frame` はメトリクス計装(WGC フレーム受信カウンタのインクリメント等)に使用する。計装不要の場合は `|| {}` を渡す。`Capturer` が `Drop` されると `on_drop` が呼ばれ、バックグラウンドスレッドが明示的に停止される。
+
 ### OCR API
 
 ```rust
@@ -362,5 +390,5 @@ impl Capture for MockCapture {
 - [ ] キャプチャ間隔のアダプティブ調整 — 状態変化が激しい場合に間隔を短縮
 - [ ] `PrintWindow` の `PW_RENDERFULLCONTENT` が効かないゲーム環境への対応
 - [ ] `windows-capture` / `win-screenshot` / `windows` クレートのバージョン固定 — 実装時に `deps-sync` で最新バージョンを確認し、`Cargo.toml` に反映
-- [ ] WGC コールバックモデルと定期ポーリングモデルの統合設計 — `Capture` トレイトで抽象化
+- [x] WGC コールバックモデルと定期ポーリングモデルの統合設計 — `Capturer::start` に `on_frame`/`on_drop` コールバックを追加し、メトリクス計装を注入可能にした
 - [ ] アンチチートソフトウェアによるキャプチャブロック時のユーザー通知
