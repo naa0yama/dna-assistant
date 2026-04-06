@@ -1,12 +1,18 @@
 # Changelog
 
 ## [v0.1.3](https://github.com/naa0yama/dna-assistant/compare/v0.1.2...v0.1.3) - 2026-04-06
+
 ### Documentation 🗒️
+
 - feat(otel): add process and app-level metrics (Phase A+B) by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/35
+
 ### Dependency Updates 📦
+
 - chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/33
 - chore(deps): update rust crate sysinfo to 0.38 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/36
+
 ### Development Environment 🔧
+
 - chore(deps): update taiki-e/install-action action to v2.69.13 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/26
 - chore(deps): update dependency usage to v3.2.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/8
 - chore(deps): update github/codeql-action action to v4.35.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/29
@@ -15,7 +21,9 @@
 - chore(deps): update taiki-e/install-action action to v2.70.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/31
 - chore(deps): update taiki-e/install-action action to v2.70.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/32
 - chore(deps): update taiki-e/install-action action to v2.70.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/34
+
 ### Other Changes
+
 - fix: clear staged files in badges:init orphan branch by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/25
 
 ## [v0.1.2](https://github.com/naa0yama/dna-assistant/compare/v0.1.1...v0.1.2) - 2026-04-03
