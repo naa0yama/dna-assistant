@@ -36,7 +36,6 @@
 		"vscode": {
 			"extensions": [
 				// 										Rust Syntax, Rust Doc Viewer 同様の機能は rust-analyzer に含まれるので入れない
-				"Anthropic.claude-code", // 			Claude Code for VSCode
 				"dprint.dprint", // 					Dprint Code Formatter
 				"EditorConfig.EditorConfig", // 		EditorConfig for VS Code
 				"MermaidChart.vscode-mermaid-chart", // Mermaid
