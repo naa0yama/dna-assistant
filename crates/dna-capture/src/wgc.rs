@@ -136,7 +136,7 @@ impl Capturer {
     ///
     /// Returns an error if the WGC session cannot be started (e.g., window not
     /// found, unsupported OS version, or API failure).
-    #[instrument]
+    #[instrument(skip(on_frame, on_drop))]
     pub fn start(
         hwnd: HWND,
         on_frame: impl Fn() + Send + Sync + 'static,
