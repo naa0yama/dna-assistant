@@ -44,7 +44,7 @@ opentelemetry_sdk = { version = "0.31", default-features = false, features = ["t
 tracing-opentelemetry = { version = "0.32", default-features = false }
 
 # Process metrics
-sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 
 # Dev dependencies
 assert_cmd = "=2.2.0"
