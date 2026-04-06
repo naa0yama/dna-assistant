@@ -3,6 +3,8 @@
 #[cfg(target_os = "windows")]
 #[allow(clippy::unreachable)] // Tauri command macro generates unreachable in Result paths
 mod commands;
+#[cfg(target_os = "windows")]
+mod metrics;
 mod monitor;
 #[cfg(target_os = "windows")]
 mod notification;
@@ -67,6 +69,14 @@ fn build() -> tauri::Result<tauri::App> {
 #[allow(clippy::missing_errors_doc, clippy::expect_used, clippy::exit)]
 pub fn run() {
     let _guard = telemetry::init();
+
+    // Install app-level metrics instruments when OTel is enabled.
+    // `_guard` is intentionally accessed here; the underscore keeps it alive on non-Windows.
+    #[cfg(all(target_os = "windows", feature = "otel"))]
+    #[allow(clippy::used_underscore_binding)]
+    if let Some(meter) = _guard.meter() {
+        metrics::install(&meter);
+    }
 
     build()
         .expect("failed to build tauri application")

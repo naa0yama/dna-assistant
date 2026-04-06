@@ -57,6 +57,9 @@ use tauri::{AppHandle, Emitter};
 #[cfg(target_os = "windows")]
 use tracing::{debug, error, info, instrument, trace, warn};
 
+#[cfg(all(target_os = "windows", feature = "otel"))]
+use opentelemetry::KeyValue;
+
 #[cfg(target_os = "windows")]
 use crate::notification::NotificationManager;
 
@@ -720,11 +723,38 @@ mod platform {
             update_status(&status, |s| s.state = MonitoringState::Capturing);
             emit_status(&app_handle, &status);
 
+            // Build WGC metric callbacks so dna-capture stays OTel-free.
+            #[cfg(feature = "otel")]
+            let (wgc_on_frame, wgc_on_drop) = match crate::metrics::get() {
+                Some(m) => {
+                    let frames = m.wgc_frames_received.clone();
+                    let dropped = m.wgc_capturer_dropped.clone();
+                    (
+                        Box::new(move || frames.add(1, &[]))
+                            as Box<dyn Fn() + Send + Sync + 'static>,
+                        Box::new(move || dropped.add(1, &[])) as Box<dyn Fn() + Send + 'static>,
+                    )
+                }
+                None => (
+                    Box::new(|| {}) as Box<dyn Fn() + Send + Sync + 'static>,
+                    Box::new(|| {}) as Box<dyn Fn() + Send + 'static>,
+                ),
+            };
+            #[cfg(not(feature = "otel"))]
+            let (wgc_on_frame, wgc_on_drop) = (
+                Box::new(|| {}) as Box<dyn Fn() + Send + Sync + 'static>,
+                Box::new(|| {}) as Box<dyn Fn() + Send + 'static>,
+            );
+
             // Try WGC first, fall back to PrintWindow
             let (mut capturer, backend_name): (Box<dyn Capture>, &str) =
-                match dna_capture::wgc::Capturer::start(hwnd) {
+                match dna_capture::wgc::Capturer::start(hwnd, wgc_on_frame, wgc_on_drop) {
                     Ok(c) => {
                         info!("using WGC capture backend");
+                        #[cfg(feature = "otel")]
+                        if let Some(m) = crate::metrics::get() {
+                            m.wgc_capturer_started.add(1, &[]);
+                        }
                         (Box::new(c), "WGC")
                     }
                     Err(e) => {
@@ -761,6 +791,12 @@ mod platform {
                         }
                         consecutive_failures = 0;
                         had_successful_capture = true;
+                        #[cfg(feature = "otel")]
+                        if let Some(m) = crate::metrics::get() {
+                            m.capture_frames.add(1, &[]);
+                            m.capture_duration
+                                .record(frame_start.elapsed().as_secs_f64(), &[]);
+                        }
                         f
                     }
                     Err(e) => {
@@ -828,18 +864,39 @@ mod platform {
                 if monitor_config.round_enabled
                     && let Some(ref ocr_engine) = ocr_engine
                 {
+                    #[cfg(feature = "otel")]
+                    let ocr_start = Instant::now();
                     run_round_number_ocr(
                         ocr_engine,
                         &game_frame,
                         &mut raw_events,
                         &round_number_rois,
                     );
+                    #[cfg(feature = "otel")]
+                    if let Some(m) = crate::metrics::get() {
+                        m.ocr_calls.add(1, &[KeyValue::new("kind", "round_number")]);
+                        m.ocr_duration.record(
+                            ocr_start.elapsed().as_secs_f64(),
+                            &[KeyValue::new("kind", "round_number")],
+                        );
+                    }
                 }
 
                 // Result screen OCR: runs every frame while result_scanning is active.
                 // Gated by RoundGone → result_scanning=true chain.
                 if result_scanning && let Some(ref ocr_engine) = ocr_engine {
+                    #[cfg(feature = "otel")]
+                    let ocr_start = Instant::now();
                     let result_events = result_detector.analyze(&game_frame, ocr_engine);
+                    #[cfg(feature = "otel")]
+                    if let Some(m) = crate::metrics::get() {
+                        m.ocr_calls
+                            .add(1, &[KeyValue::new("kind", "result_screen")]);
+                        m.ocr_duration.record(
+                            ocr_start.elapsed().as_secs_f64(),
+                            &[KeyValue::new("kind", "result_screen")],
+                        );
+                    }
                     for event in result_events {
                         match event {
                             // Always pass through Visible
@@ -867,6 +924,11 @@ mod platform {
                     } = event
                     {
                         select_round_votes.push(*done);
+                        #[cfg(feature = "otel")]
+                        if let Some(m) = crate::metrics::get() {
+                            m.select_votes_pushes.add(1, &[]);
+                            m.select_votes_len.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
 
@@ -903,6 +965,11 @@ mod platform {
 
                     // Emit transitions to frontend
                     for event in &transition_events {
+                        #[cfg(feature = "otel")]
+                        if let Some(m) = crate::metrics::get() {
+                            m.detection_events
+                                .add(1, &[KeyValue::new("kind", event_kind_name(event))]);
+                        }
                         let mut elapsed = None;
                         #[allow(unused_mut)]
                         let mut elapsed_duration: Option<Duration> = None;
@@ -918,6 +985,12 @@ mod platform {
                                 select_round_votes.clear();
                                 // New round started: stop result scanning
                                 result_scanning = false;
+                                #[cfg(feature = "otel")]
+                                if let Some(m) = crate::metrics::get() {
+                                    m.select_votes_clears.add(1, &[]);
+                                    m.select_votes_len.store(0, Ordering::Relaxed);
+                                    m.result_scanning.store(false, Ordering::Relaxed);
+                                }
                             }
                             DetectionEvent::RoundGone { .. } => {
                                 // Calculate elapsed time for this round
@@ -931,6 +1004,11 @@ mod platform {
                                     monitor_config.confirmation_ratio,
                                 );
                                 select_round_votes.clear();
+                                #[cfg(feature = "otel")]
+                                if let Some(m) = crate::metrics::get() {
+                                    m.select_votes_clears.add(1, &[]);
+                                    m.select_votes_len.store(0, Ordering::Relaxed);
+                                }
                                 let completed =
                                     resolve_round_number(majority, current_round, &round_history);
                                 if let Some(num) = completed {
@@ -946,6 +1024,10 @@ mod platform {
 
                                 // Start scanning for result screen
                                 result_scanning = true;
+                                #[cfg(feature = "otel")]
+                                if let Some(m) = crate::metrics::get() {
+                                    m.result_scanning.store(true, Ordering::Relaxed);
+                                }
                             }
                             DetectionEvent::ResultScreenVisible { .. } => {
                                 elapsed_duration = round_start.map(|s| s.elapsed());
@@ -961,6 +1043,10 @@ mod platform {
                                 // Result screen dismissed: full reset
                                 result_scanning = false;
                                 result_visible_confirmed = false;
+                                #[cfg(feature = "otel")]
+                                if let Some(m) = crate::metrics::get() {
+                                    m.result_scanning.store(false, Ordering::Relaxed);
+                                }
                                 round_start = None;
                                 notification_mgr.reset_roundtrip();
                             }
@@ -988,7 +1074,14 @@ mod platform {
                 }
 
                 // Update frame timing + emit status once per frame
-                let frame_ms = frame_start.elapsed().as_secs_f64().mul_add(1000.0, 0.0);
+                let frame_elapsed = frame_start.elapsed();
+                let frame_ms = frame_elapsed.as_secs_f64().mul_add(1000.0, 0.0);
+                #[cfg(feature = "otel")]
+                if let Some(m) = crate::metrics::get() {
+                    m.monitor_loop_iterations.add(1, &[]);
+                    m.monitor_loop_duration
+                        .record(frame_elapsed.as_secs_f64(), &[]);
+                }
                 let interval_ms = monitor_config
                     .capture_interval
                     .as_secs_f64()
@@ -1020,6 +1113,7 @@ mod platform {
                     return;
                 }
             }
+            // capturer is dropped here; the WGC Drop impl fires on_drop + stop().
         }
     }
 
