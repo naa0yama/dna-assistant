@@ -3,8 +3,6 @@
 #[cfg(target_os = "windows")]
 #[allow(clippy::unreachable)] // Tauri command macro generates unreachable in Result paths
 mod commands;
-#[cfg(target_os = "windows")]
-mod metrics;
 mod monitor;
 #[cfg(target_os = "windows")]
 mod notification;
@@ -96,7 +94,7 @@ pub fn run() {
     #[cfg(all(target_os = "windows", feature = "otel"))]
     #[allow(clippy::used_underscore_binding)]
     if let Some(meter) = _guard.meter() {
-        metrics::install(&meter);
+        telemetry::metrics::install(&meter);
     }
 
     build(filter_handle)

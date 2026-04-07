@@ -58,6 +58,10 @@ use tauri::{AppHandle, Emitter};
 use tracing::{debug, error, info, instrument, trace, warn};
 
 #[cfg(all(target_os = "windows", feature = "otel"))]
+use crate::telemetry::conventions::{attribute as dna_attr, kind as dna_kind};
+#[cfg(all(target_os = "windows", feature = "otel"))]
+use crate::telemetry::metrics;
+#[cfg(all(target_os = "windows", feature = "otel"))]
 use opentelemetry::KeyValue;
 
 #[cfg(target_os = "windows")]
@@ -740,7 +744,7 @@ mod platform {
 
             // Build WGC metric callbacks so dna-capture stays OTel-free.
             #[cfg(feature = "otel")]
-            let (wgc_on_frame, wgc_on_drop) = match crate::metrics::get() {
+            let (wgc_on_frame, wgc_on_drop) = match metrics::get() {
                 Some(m) => {
                     let frames = m.wgc_frames_received.clone();
                     let dropped = m.wgc_capturer_dropped.clone();
@@ -767,7 +771,7 @@ mod platform {
                     Ok(c) => {
                         info!("using WGC capture backend");
                         #[cfg(feature = "otel")]
-                        if let Some(m) = crate::metrics::get() {
+                        if let Some(m) = metrics::get() {
                             m.wgc_capturer_started.add(1, &[]);
                         }
                         (Box::new(c), "WGC")
@@ -807,7 +811,7 @@ mod platform {
                         consecutive_failures = 0;
                         had_successful_capture = true;
                         #[cfg(feature = "otel")]
-                        if let Some(m) = crate::metrics::get() {
+                        if let Some(m) = metrics::get() {
                             m.capture_frames.add(1, &[]);
                             m.capture_duration
                                 .record(frame_start.elapsed().as_secs_f64(), &[]);
@@ -888,11 +892,12 @@ mod platform {
                         &round_number_rois,
                     );
                     #[cfg(feature = "otel")]
-                    if let Some(m) = crate::metrics::get() {
-                        m.ocr_calls.add(1, &[KeyValue::new("kind", "round_number")]);
+                    if let Some(m) = metrics::get() {
+                        m.ocr_calls
+                            .add(1, &[KeyValue::new(dna_attr::KIND, dna_kind::ROUND_NUMBER)]);
                         m.ocr_duration.record(
                             ocr_start.elapsed().as_secs_f64(),
-                            &[KeyValue::new("kind", "round_number")],
+                            &[KeyValue::new(dna_attr::KIND, dna_kind::ROUND_NUMBER)],
                         );
                     }
                 }
@@ -904,12 +909,12 @@ mod platform {
                     let ocr_start = Instant::now();
                     let result_events = result_detector.analyze(&game_frame, ocr_engine);
                     #[cfg(feature = "otel")]
-                    if let Some(m) = crate::metrics::get() {
+                    if let Some(m) = metrics::get() {
                         m.ocr_calls
-                            .add(1, &[KeyValue::new("kind", "result_screen")]);
+                            .add(1, &[KeyValue::new(dna_attr::KIND, dna_kind::RESULT_SCREEN)]);
                         m.ocr_duration.record(
                             ocr_start.elapsed().as_secs_f64(),
-                            &[KeyValue::new("kind", "result_screen")],
+                            &[KeyValue::new(dna_attr::KIND, dna_kind::RESULT_SCREEN)],
                         );
                     }
                     for event in result_events {
@@ -940,7 +945,7 @@ mod platform {
                     {
                         select_round_votes.push(*done);
                         #[cfg(feature = "otel")]
-                        if let Some(m) = crate::metrics::get() {
+                        if let Some(m) = metrics::get() {
                             m.select_votes_pushes.add(1, &[]);
                             m.select_votes_len.fetch_add(1, Ordering::Relaxed);
                         }
@@ -981,9 +986,9 @@ mod platform {
                     // Emit transitions to frontend
                     for event in &transition_events {
                         #[cfg(feature = "otel")]
-                        if let Some(m) = crate::metrics::get() {
+                        if let Some(m) = metrics::get() {
                             m.detection_events
-                                .add(1, &[KeyValue::new("kind", event_kind_name(event))]);
+                                .add(1, &[KeyValue::new(dna_attr::KIND, event_kind_name(event))]);
                         }
                         let mut elapsed = None;
                         #[allow(unused_mut)]
@@ -1001,7 +1006,7 @@ mod platform {
                                 // New round started: stop result scanning
                                 result_scanning = false;
                                 #[cfg(feature = "otel")]
-                                if let Some(m) = crate::metrics::get() {
+                                if let Some(m) = metrics::get() {
                                     m.select_votes_clears.add(1, &[]);
                                     m.select_votes_len.store(0, Ordering::Relaxed);
                                     m.result_scanning.store(false, Ordering::Relaxed);
@@ -1020,7 +1025,7 @@ mod platform {
                                 );
                                 select_round_votes.clear();
                                 #[cfg(feature = "otel")]
-                                if let Some(m) = crate::metrics::get() {
+                                if let Some(m) = metrics::get() {
                                     m.select_votes_clears.add(1, &[]);
                                     m.select_votes_len.store(0, Ordering::Relaxed);
                                 }
@@ -1040,7 +1045,7 @@ mod platform {
                                 // Start scanning for result screen
                                 result_scanning = true;
                                 #[cfg(feature = "otel")]
-                                if let Some(m) = crate::metrics::get() {
+                                if let Some(m) = metrics::get() {
                                     m.result_scanning.store(true, Ordering::Relaxed);
                                 }
                             }
@@ -1059,7 +1064,7 @@ mod platform {
                                 result_scanning = false;
                                 result_visible_confirmed = false;
                                 #[cfg(feature = "otel")]
-                                if let Some(m) = crate::metrics::get() {
+                                if let Some(m) = metrics::get() {
                                     m.result_scanning.store(false, Ordering::Relaxed);
                                 }
                                 round_start = None;
@@ -1092,7 +1097,7 @@ mod platform {
                 let frame_elapsed = frame_start.elapsed();
                 let frame_ms = frame_elapsed.as_secs_f64().mul_add(1000.0, 0.0);
                 #[cfg(feature = "otel")]
-                if let Some(m) = crate::metrics::get() {
+                if let Some(m) = metrics::get() {
                     m.monitor_loop_iterations.add(1, &[]);
                     m.monitor_loop_duration
                         .record(frame_elapsed.as_secs_f64(), &[]);

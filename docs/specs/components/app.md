@@ -23,14 +23,15 @@ DNA Assistant のアプリケーションレイヤー(`src-tauri`)は、`dna-cap
 
 ## 1.2 モジュール構成
 
-| モジュール     | ファイル          | 責務                                                     | プラットフォーム       |
-| -------------- | ----------------- | -------------------------------------------------------- | ---------------------- |
-| `commands`     | `commands.rs`     | IPC コマンドハンドラ(start/stop/status/preview/settings) | `cfg(windows)`         |
-| `monitor`      | `monitor.rs`      | キャプチャ → 検出 → OCR → 通知のバックグラウンドループ   | `cfg(windows)`         |
-| `notification` | `notification.rs` | Toast 通知の送信・重複制御                               | `cfg(windows)`         |
-| `settings`     | `settings.rs`     | 設定の永続化(JSON ファイルへの読み書き)                  | `cfg(windows)`         |
-| `metrics`      | `metrics.rs`      | OTel 計装 — `AppMetrics` グローバルシングルトン          | `cfg(windows)`         |
-| `telemetry`    | `telemetry.rs`    | tracing/OTel 初期化・プロセスレベルメトリクス登録        | クロスプラットフォーム |
+| モジュール               | ファイル                   | 責務                                                     | プラットフォーム       |
+| ------------------------ | -------------------------- | -------------------------------------------------------- | ---------------------- |
+| `commands`               | `commands.rs`              | IPC コマンドハンドラ(start/stop/status/preview/settings) | `cfg(windows)`         |
+| `monitor`                | `monitor.rs`               | キャプチャ → 検出 → OCR → 通知のバックグラウンドループ   | `cfg(windows)`         |
+| `notification`           | `notification.rs`          | Toast 通知の送信・重複制御                               | `cfg(windows)`         |
+| `settings`               | `settings.rs`              | 設定の永続化(JSON ファイルへの読み書き)                  | `cfg(windows)`         |
+| `telemetry`              | `telemetry/mod.rs`         | tracing/OTel 初期化・プロセスレベルメトリクス登録        | クロスプラットフォーム |
+| `telemetry::metrics`     | `telemetry/metrics.rs`     | OTel 計装 — `AppMetrics` グローバルシングルトン          | `cfg(windows)`         |
+| `telemetry::conventions` | `telemetry/conventions.rs` | `dna.*` メトリクス名・属性キー定数                       | `cfg(otel)`            |
 
 Linux では `MonitorState` が空のスタブ構造体としてコンパイルされ、ワークスペース全体の `cargo check` が可能。
 
@@ -291,7 +292,7 @@ pub struct MonitorStatus {
 - [x] Phase 2 OCR 検出との統合 — `dna-capture::ocr::JapaneseOcrEngine` + `run_ocr()` 実装済み
 - [x] 通知判定ロジック — `NotificationManager` + `TransitionFilter` 実装済み
 - [x] 検出結果のスクリーンショット保存 — `TRACE` レベル時に `debug-frames/` へ保存
-- [x] OTel メトリクス計装 — `metrics.rs` の `AppMetrics` でモニターループ・キャプチャ・OCR・WGC ライフサイクル等を計装。`telemetry.rs` でプロセスレベルメトリクス(`process.memory.*`, `process.cpu.utilization`, `process.uptime`)を `sysinfo` 経由で登録
+- [x] OTel メトリクス計装 — `telemetry/metrics.rs` の `AppMetrics` でモニターループ・キャプチャ・OCR・WGC ライフサイクル等を計装。`telemetry/mod.rs` でプロセスレベルメトリクス(`process.memory.*`, `process.cpu.utilization`, `process.uptime`)を `sysinfo` 経由で登録。`telemetry/conventions.rs` で `dna.*` メトリクス名・属性キーを定数として一元管理
 - [ ] システムトレイアイコン — 最小化時にトレイに格納、状態をアイコンで表示
 - [ ] キャプチャ間隔のユーザー設定 UI — 現在はデフォルト 2 秒固定
 - [ ] 通知音のカスタマイズ — Windows Toast のオーディオ設定

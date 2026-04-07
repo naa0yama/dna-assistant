@@ -1,4 +1,14 @@
+//! OpenTelemetry instrumentation root module.
+//!
+//! Hosts cross-signal conventions and signal-specific submodules.
+//! Add `tracing` / `logs` submodules here when adopting those signals.
+//!
 //! Telemetry initialization: tracing subscriber with optional `OTel` export.
+
+#[cfg(all(target_os = "windows", feature = "otel"))]
+pub mod conventions;
+#[cfg(all(target_os = "windows", feature = "otel"))]
+pub mod metrics;
 
 use tracing::Subscriber;
 use tracing_subscriber::EnvFilter;

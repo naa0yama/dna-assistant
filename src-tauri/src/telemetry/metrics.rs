@@ -10,6 +10,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use opentelemetry::metrics::{Counter, Histogram, Meter};
 
+#[cfg(feature = "otel")]
+use crate::telemetry::conventions::metric as dna_metric;
+
 static APP_METRICS: OnceLock<AppMetrics> = OnceLock::new();
 
 /// Install the global `AppMetrics` instance from `meter`.
@@ -50,13 +53,12 @@ pub struct AppMetrics {
     pub ocr_calls: Counter<u64>,
     pub ocr_duration: Histogram<f64>,
 
-    // --- #3 select_round_votes ---
-    /// Current length of `select_round_votes` `Vec` (`ObservableGauge` backed by atomic).
+    // --- #2 select_round_votes ---
     pub select_votes_len: Arc<AtomicUsize>,
     pub select_votes_pushes: Counter<u64>,
     pub select_votes_clears: Counter<u64>,
 
-    // --- #4 WGC capturer lifecycle ---
+    // --- WGC ---
     pub wgc_frames_received: Counter<u64>,
     pub wgc_capturer_started: Counter<u64>,
     pub wgc_capturer_dropped: Counter<u64>,
@@ -72,7 +74,7 @@ impl AppMetrics {
         {
             let flag = Arc::clone(&result_scanning);
             meter
-                .i64_observable_gauge("dna.monitor.result_scanning.active")
+                .i64_observable_gauge(dna_metric::MONITOR_RESULT_SCANNING_ACTIVE)
                 .with_unit("1")
                 .with_description("1 when result-screen OCR scanning is active, 0 otherwise")
                 .with_callback(move |obs| {
@@ -85,7 +87,7 @@ impl AppMetrics {
         {
             let len = Arc::clone(&select_votes_len);
             meter
-                .i64_observable_gauge("dna.monitor.select_round_votes.len")
+                .i64_observable_gauge(dna_metric::MONITOR_SELECT_ROUND_VOTES_LEN)
                 .with_unit("{vote}")
                 .with_description("Current length of the select_round_votes buffer")
                 .with_callback(move |obs| {
@@ -100,31 +102,31 @@ impl AppMetrics {
         Self {
             // Monitor loop
             monitor_loop_iterations: meter
-                .u64_counter("dna.monitor.loop.iterations")
+                .u64_counter(dna_metric::MONITOR_LOOP_ITERATIONS)
                 .with_unit("{iteration}")
                 .with_description("Total monitor loop iterations")
                 .build(),
             monitor_loop_duration: meter
-                .f64_histogram("dna.monitor.loop.duration")
+                .f64_histogram(dna_metric::MONITOR_LOOP_DURATION)
                 .with_unit("s")
                 .with_description("Duration of each monitor loop iteration")
                 .build(),
 
             // Capture
             capture_frames: meter
-                .u64_counter("dna.capture.frames")
+                .u64_counter(dna_metric::CAPTURE_FRAMES)
                 .with_unit("{frame}")
                 .with_description("Total captured frames")
                 .build(),
             capture_duration: meter
-                .f64_histogram("dna.capture.duration")
+                .f64_histogram(dna_metric::CAPTURE_DURATION)
                 .with_unit("s")
                 .with_description("Duration of each screen capture")
                 .build(),
 
             // Detection
             detection_events: meter
-                .u64_counter("dna.detection.events")
+                .u64_counter(dna_metric::DETECTION_EVENTS)
                 .with_unit("{event}")
                 .with_description("Total detection events fired, by detector")
                 .build(),
@@ -134,12 +136,12 @@ impl AppMetrics {
 
             // OCR
             ocr_calls: meter
-                .u64_counter("dna.ocr.calls")
+                .u64_counter(dna_metric::OCR_CALLS)
                 .with_unit("{call}")
                 .with_description("Total OCR recognize calls, by kind and ROI")
                 .build(),
             ocr_duration: meter
-                .f64_histogram("dna.ocr.duration")
+                .f64_histogram(dna_metric::OCR_DURATION)
                 .with_unit("s")
                 .with_description("Duration of OCR recognize calls")
                 .build(),
@@ -147,29 +149,29 @@ impl AppMetrics {
             // select_round_votes
             select_votes_len,
             select_votes_pushes: meter
-                .u64_counter("dna.monitor.select_round_votes.pushes")
+                .u64_counter(dna_metric::MONITOR_SELECT_ROUND_VOTES_PUSHES)
                 .with_unit("{vote}")
                 .with_description("Total pushes to select_round_votes")
                 .build(),
             select_votes_clears: meter
-                .u64_counter("dna.monitor.select_round_votes.clears")
+                .u64_counter(dna_metric::MONITOR_SELECT_ROUND_VOTES_CLEARS)
                 .with_unit("{clear}")
                 .with_description("Total clears of select_round_votes")
                 .build(),
 
             // WGC
             wgc_frames_received: meter
-                .u64_counter("dna.wgc.frames_received")
+                .u64_counter(dna_metric::WGC_FRAMES_RECEIVED)
                 .with_unit("{frame}")
                 .with_description("Total frames received from WGC callback")
                 .build(),
             wgc_capturer_started: meter
-                .u64_counter("dna.wgc.capturer.started")
+                .u64_counter(dna_metric::WGC_CAPTURER_STARTED)
                 .with_unit("{capturer}")
                 .with_description("Total WGC Capturer instances started")
                 .build(),
             wgc_capturer_dropped: meter
-                .u64_counter("dna.wgc.capturer.dropped")
+                .u64_counter(dna_metric::WGC_CAPTURER_DROPPED)
                 .with_unit("{capturer}")
                 .with_description(
                     "Total WGC Capturer instances dropped (started - dropped = leaked)",
