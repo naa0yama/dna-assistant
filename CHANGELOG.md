@@ -1,9 +1,13 @@
 # Changelog
 
 ## [v0.1.5](https://github.com/naa0yama/dna-assistant/compare/v0.1.4...v0.1.5) - 2026-04-07
+
 ### Documentation 🗒️
+
 - feat(settings): add debug telemetry fields with RUST_LOG hot-reload and 1600x900 fixture migration by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/42
+
 ### Development Environment 🔧
+
 - chore(deps): update dependency actionlint to v1.7.12 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/39
 - chore(deps): update taiki-e/install-action action to v2.70.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/41
 - chore(deps): update dependency openobserve/openobserve to v0.70.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/43
