@@ -76,31 +76,26 @@ fn visible_nw_error() {
     );
 }
 
-/// Full-frame test using default config (not cropped fixture).
-/// The fixture includes the titlebar, so we apply `crop_titlebar` first.
+/// Post-update full-frame test: 1600x900 client area (no titlebar), default config.
 #[cfg_attr(miri, ignore)]
 #[test]
-fn visible_nw_error_1368x800_full_frame() {
+fn visible_nw_error_1600x900_full_frame() {
     use dna_detector::config::DetectionConfig;
     use dna_detector::titlebar::crop_titlebar;
 
-    let raw = load_fixture("visible_nw_error_1368x800.png");
+    let raw = load_fixture("visible_nw_error_1600x900.png");
     let frame = crop_titlebar(&raw);
     let config = DetectionConfig::default();
     let detector = DialogDetector::new(config.dialog);
     let events = detector.analyze(&frame);
     assert!(
         is_visible(&events),
-        "expected DialogVisible for 1368x800 full frame, got {events:?}"
+        "expected DialogVisible for 1600x900 full frame, got {events:?}"
     );
 }
 
-/// One-shot utility: mask the full-frame fixture to black outside the
-/// dialog ROI bounding box, then re-save as optimized PNG.
-/// Run manually: `cargo test -p dna-detector --test dialog_detector_test -- mask_fixture --ignored --nocapture`
-/// One-shot utility: mask the full-frame fixture to black outside the
-/// dialog ROI bounding box, then re-save as optimized PNG.
-/// Run manually: `cargo test -p dna-detector --test dialog_detector_test -- mask_fixture --ignored --nocapture`
+/// One-shot utility: mask the 1600x900 full-frame dialog fixture.
+/// Run manually: `cargo test -p dna-detector --test dialog_detector_test -- mask_fixture_1600x900 --ignored --nocapture`
 #[ignore = "one-shot fixture masking utility"]
 #[test]
 #[allow(
@@ -109,12 +104,12 @@ fn visible_nw_error_1368x800_full_frame() {
     clippy::cast_sign_loss,
     clippy::as_conversions
 )]
-fn mask_fixture() {
+fn mask_fixture_1600x900() {
     use dna_detector::config::DetectionConfig;
     use dna_detector::titlebar::crop_titlebar;
     use image::Rgba;
 
-    let fixture = "visible_nw_error_1368x800.png";
+    let fixture = "visible_nw_error_1600x900.png";
     let path = format!(
         "{}/tests/fixtures/dialog/{fixture}",
         env!("CARGO_MANIFEST_DIR")
@@ -122,14 +117,12 @@ fn mask_fixture() {
     let raw = image::open(&path).unwrap().to_rgba8();
     let (w, h) = (raw.width(), raw.height());
 
-    // Detect titlebar height
     let game = crop_titlebar(&raw);
     let tb = h - game.height();
     let gh = f64::from(game.height());
     let fw = f64::from(w);
 
     let cfg = DetectionConfig::default();
-    // Keep union of bg_roi and text_roi with margin
     let margin = 0.06;
     let min_x = cfg.dialog.bg_roi.x.min(cfg.dialog.text_roi.x);
     let min_y = cfg.dialog.bg_roi.y.min(cfg.dialog.text_roi.y);
@@ -147,7 +140,6 @@ fn mask_fixture() {
     let black = Rgba([0u8, 0, 0, 255]);
     for y in 0..h {
         for x in 0..w {
-            // Preserve titlebar so crop_titlebar() works on the masked image
             if y >= tb && (x < kx1 || x >= kx2 || y < ky1 || y >= ky2) {
                 masked.put_pixel(x, y, black);
             }

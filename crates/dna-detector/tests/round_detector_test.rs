@@ -82,16 +82,16 @@ const fn is_visible(events: &[DetectionEvent]) -> bool {
 #[cfg_attr(miri, ignore)]
 #[test]
 #[ignore = "generates ROI crops for visual inspection"]
-fn mask_round_pro_visible_r14() {
+fn mask_round_visible_1600x900() {
     let config = default_round_config();
-    let raw = load_fixture("pro_visible_r14_1602x932.png");
+    let raw = load_fixture("visible_1600x900.png");
 
     let masked = mask_fixture(&raw, &[&config.roi]);
-    save_fixture("pro_visible_r14_1602x932.png", &masked);
+    save_fixture("visible_1600x900.png", &masked);
 
     let game = crop_titlebar(&masked);
     if let Some(crop) = config.roi.crop(&game) {
-        save_fixture("roi_pro_1602x932.png", &crop);
+        save_fixture("roi_1600x900.png", &crop);
     }
 }
 
@@ -99,9 +99,12 @@ fn mask_round_pro_visible_r14() {
 
 #[cfg_attr(miri, ignore)]
 #[test]
-fn pro_visible_r14_detected() {
+fn visible_1600x900_detected() {
     let detector = RoundDetector::new(default_round_config());
-    let raw = load_fixture("pro_visible_r14_1602x932.png");
+    let raw = load_fixture("visible_1600x900.png");
     let game = crop_titlebar(&raw);
-    assert!(is_visible(&detector.analyze(&game)));
+    assert!(
+        is_visible(&detector.analyze(&game)),
+        "expected RoundVisible for post-update 1600x900 frame"
+    );
 }

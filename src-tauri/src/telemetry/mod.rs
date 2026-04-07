@@ -1,8 +1,49 @@
+//! OpenTelemetry instrumentation root module.
+//!
+//! Hosts cross-signal conventions and signal-specific submodules.
+//! Add `tracing` / `logs` submodules here when adopting those signals.
+//!
 //! Telemetry initialization: tracing subscriber with optional `OTel` export.
 
+#[cfg(all(target_os = "windows", feature = "otel"))]
+pub mod conventions;
+#[cfg(all(target_os = "windows", feature = "otel"))]
+pub mod metrics;
+
+use tracing::Subscriber;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::reload;
 use tracing_subscriber::util::SubscriberInitExt;
+
+/// Type-erased handle for reloading the log-level filter at runtime.
+///
+/// Wraps a `reload::Handle<EnvFilter, _>` with type erasure so it can be
+/// stored as Tauri managed state regardless of the concrete subscriber type,
+/// which varies with the `otel` feature flag.
+///
+/// Obtained from [`init`] and stored via `app.manage()` so that
+/// [`crate::commands::save_settings`] can hot-reload `RUST_LOG` on save.
+// Fields and methods are used only on Windows (commands.rs is cfg(windows)).
+#[allow(dead_code)]
+pub struct EnvFilterHandle(std::sync::Arc<dyn Fn(EnvFilter) -> Result<(), String> + Send + Sync>);
+
+impl EnvFilterHandle {
+    fn from_handle<S>(handle: reload::Handle<EnvFilter, S>) -> Self
+    where
+        S: Subscriber + 'static,
+    {
+        Self(std::sync::Arc::new(move |filter| {
+            handle.reload(filter).map_err(|e| e.to_string())
+        }))
+    }
+
+    /// Replace the active `EnvFilter`. Returns an error description on failure.
+    #[allow(dead_code)] // Used only on Windows (commands.rs is cfg(windows))
+    pub fn reload(&self, filter: EnvFilter) -> Result<(), String> {
+        (self.0)(filter)
+    }
+}
 
 /// Guard that shuts down `OTel` providers on drop.
 #[must_use]
@@ -48,9 +89,14 @@ impl Drop for TelemetryGuard {
 ///
 /// When the `otel` feature is enabled and `OTEL_EXPORTER_OTLP_ENDPOINT` is set,
 /// spans are exported via OTLP. Otherwise, only the fmt layer is active.
-pub fn init() -> TelemetryGuard {
+///
+/// Returns `(TelemetryGuard, EnvFilterHandle)`.  The handle lets callers
+/// reload the `EnvFilter` at runtime (e.g. when the user saves `debug_rust_log`
+/// in Settings) without restarting the process.
+pub fn init() -> (TelemetryGuard, EnvFilterHandle) {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,dna=info"));
+    let (filter_layer, handle) = reload::Layer::new(env_filter);
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(true)
@@ -60,26 +106,32 @@ pub fn init() -> TelemetryGuard {
     {
         let (otel_layer, tracer_provider, meter_provider) = init_otel();
 
+        // otel_layer is placed first (.with innermost) so its S = Registry,
+        // matching OpenTelemetryLayer<Registry, Tracer>: Layer<Registry>.
+        // filter_layer then wraps the otel-layered registry.
         tracing_subscriber::registry()
             .with(otel_layer)
-            .with(env_filter)
+            .with(filter_layer)
             .with(fmt_layer)
             .init();
 
-        TelemetryGuard {
-            tracer_provider,
-            meter_provider,
-        }
+        (
+            TelemetryGuard {
+                tracer_provider,
+                meter_provider,
+            },
+            EnvFilterHandle::from_handle(handle),
+        )
     }
 
     #[cfg(not(feature = "otel"))]
     {
         tracing_subscriber::registry()
-            .with(env_filter)
+            .with(filter_layer)
             .with(fmt_layer)
             .init();
 
-        TelemetryGuard {}
+        (TelemetryGuard {}, EnvFilterHandle::from_handle(handle))
     }
 }
 

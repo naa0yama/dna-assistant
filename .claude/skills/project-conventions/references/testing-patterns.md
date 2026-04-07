@@ -14,7 +14,7 @@ For universal Miri rules and decision flowchart, see
 | Crate                       | Reason                                     | Tests |
 | --------------------------- | ------------------------------------------ | ----- |
 | `dna-capture`               | Windows FFI (`windows`, `windows-capture`) | 0     |
-| `dna-assistant` (src-tauri) | Tauri runtime, Windows APIs                | 4     |
+| `dna-assistant` (src-tauri) | Tauri runtime, Windows APIs                | 18    |
 
 ### Per-Crate Miri Strategy
 
@@ -33,7 +33,7 @@ For universal Miri rules and decision flowchart, see
 
 | Metric                      | Count |
 | --------------------------- | ----- |
-| Total tests                 | 65    |
-| Miri-compatible             | 35    |
-| Miri-ignored (per-test)     | 30    |
-| Miri-excluded (crate-level) | 4     |
+| Total tests                 | 94    |
+| Miri-compatible             | 64    |
+| Miri-ignored (per-test)     | 12    |
+| Miri-excluded (crate-level) | 18    |

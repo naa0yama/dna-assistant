@@ -3,9 +3,11 @@
 use serde::Serialize;
 use tauri::State;
 use tracing::instrument;
+use tracing_subscriber::EnvFilter;
 
 use crate::monitor::{self, CaptureInfo, MonitorConfig, MonitorState, MonitorStatus};
 use crate::notification::NotificationManager;
+use crate::telemetry::EnvFilterHandle;
 
 /// Start the background monitoring loop.
 ///
@@ -118,7 +120,17 @@ pub fn get_default_settings() -> MonitorConfig {
     MonitorConfig::default()
 }
 
+/// Response for [`save_settings`].
+#[derive(Debug, Serialize)]
+pub struct SaveSettingsResult {
+    /// Whether an app restart is required to apply the OTel configuration change.
+    pub restart_required: bool,
+}
+
 /// Update monitor configuration and persist to disk.
+///
+/// - `debug_rust_log` changes are applied immediately via the reload handle.
+/// - `debug_otel_endpoint` / `debug_otel_headers` changes set `restart_required: true`.
 ///
 /// # Errors
 ///
@@ -128,8 +140,43 @@ pub fn get_default_settings() -> MonitorConfig {
 pub async fn save_settings(
     app_handle: tauri::AppHandle,
     state: State<'_, MonitorState>,
+    filter_handle: State<'_, EnvFilterHandle>,
     config: MonitorConfig,
-) -> Result<(), String> {
+) -> Result<SaveSettingsResult, String> {
+    // Snapshot only the debug fields we need to compare (avoid holding the lock).
+    let (old_rust_log, old_otel_endpoint, old_otel_headers) = {
+        let guard = state
+            .config
+            .lock()
+            .map_err(|e| format!("config lock poisoned: {e}"))?;
+        (
+            guard.debug_rust_log.clone(),
+            guard.debug_otel_endpoint.clone(),
+            guard.debug_otel_headers.clone(),
+        )
+    };
+
+    // Hot-reload RUST_LOG if the directive changed.
+    if config.debug_rust_log != old_rust_log {
+        let directive = if config.debug_rust_log.is_empty() {
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "warn,dna=info".to_owned())
+        } else {
+            config.debug_rust_log.clone()
+        };
+        match EnvFilter::try_new(&directive) {
+            Ok(new_filter) => {
+                if let Err(e) = filter_handle.reload(new_filter) {
+                    tracing::warn!("Failed to reload log filter: {e}");
+                }
+            }
+            Err(e) => tracing::warn!("Invalid RUST_LOG directive {directive:?}: {e}"),
+        }
+    }
+
+    // OTel fields require a restart to apply (providers are built once at startup).
+    let restart_required = config.debug_otel_endpoint != old_otel_endpoint
+        || config.debug_otel_headers != old_otel_headers;
+
     {
         let mut guard = state
             .config
@@ -146,7 +193,13 @@ pub async fn save_settings(
         monitor::start(app_handle, &state).map_err(|e| format!("{e:#}"))?;
     }
 
-    Ok(())
+    Ok(SaveSettingsResult { restart_required })
+}
+
+/// Restart the application to apply configuration changes that cannot be hot-reloaded.
+#[tauri::command]
+pub fn restart_app(app: tauri::AppHandle) {
+    app.restart();
 }
 
 /// Send a test notification (Discord or Windows toast depending on config).

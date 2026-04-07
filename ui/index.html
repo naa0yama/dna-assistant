@@ -387,6 +387,34 @@
         </div>
       </div>
 
+      <!-- Debug (Telemetry) -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-4">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-base-content/50 font-semibold uppercase">Debug (Telemetry)</span>
+          </div>
+          <p class="text-xs text-base-content/50 mb-3">
+            RUST_LOG is applied immediately on save.
+            OTel endpoint / headers require an app restart.
+            Leave blank to use the OS environment variable (or built-in default).
+          </p>
+          <div class="grid grid-cols-1 gap-y-3">
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">RUST_LOG</span></div>
+              <input type="text" placeholder="warn,dna=info" class="input input-bordered input-sm font-mono" data-key="debug_rust_log">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">OTEL_EXPORTER_OTLP_ENDPOINT</span></div>
+              <input type="text" placeholder="http://localhost:5080/api/default/v1/traces" class="input input-bordered input-sm font-mono" data-key="debug_otel_endpoint">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs">OTEL_EXPORTER_OTLP_HEADERS</span></div>
+              <input type="text" placeholder="Authorization=Basic ..." class="input input-bordered input-sm font-mono" data-key="debug_otel_headers">
+            </label>
+          </div>
+        </div>
+      </div>
+
       <!-- Save / Reset -->
       <div class="flex gap-2 justify-end pb-2">
         <button class="btn btn-ghost btn-sm" id="settings-reset-btn">Reset to defaults</button>
@@ -396,6 +424,22 @@
     </div>
 
   </main>
+
+  <!-- Restart required modal (OTel endpoint / headers changed) -->
+  <dialog id="restart-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg mb-2">Restart Required</h3>
+      <p class="text-sm mb-4">
+        OTel endpoint / headers changes take effect after an app restart.
+        Restart now?
+      </p>
+      <div class="modal-action">
+        <button class="btn btn-ghost btn-sm" id="restart-modal-later">Later</button>
+        <button class="btn btn-primary btn-sm" id="restart-modal-confirm">Restart</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
 
   <script src="main.js"></script>
 </body>

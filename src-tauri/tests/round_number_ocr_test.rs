@@ -43,14 +43,15 @@ fn ocr_roi(
 
 // ── Tests ───────────────────────────────────────────────────────────
 
-/// Verify header ROI OCR recognizes "自動周回中" and extracts the round number.
+/// Verify header ROI OCR recognizes "自動周回中" and extracts the round number
+/// (post-update 1600x900 fixture: select_header ROI y=0.10).
 #[cfg_attr(miri, ignore)]
 #[test]
 fn ocr_round_select_header() {
     let engine = JapaneseOcrEngine::new().expect("OCR engine init failed");
     let rois = RoundNumberRoiConfig::default();
 
-    let raw = load_fixture("round_select_pro_1602x932.png");
+    let raw = load_fixture("round_select_pro_1600x900.png");
     let game = crop_titlebar(&raw);
 
     let text = ocr_roi(&engine, &game, &rois.select_header);
@@ -65,19 +66,22 @@ fn ocr_round_select_header() {
     );
     assert_eq!(
         round,
-        Some(10),
-        "expected header round=10, got {round:?}, ocr=\"{text}\""
+        Some(21),
+        "expected header round=21 (from '自動周回中（21/99）'), got {round:?}, ocr=\"{text}\""
     );
 }
 
-/// Verify left/right panel ROI OCR contains "ラウンド" text.
+/// Verify left/right panel ROI OCR on the post-update 1600x900 fixture.
+///
+/// The panel shows "XX ラウンド" list entries; left panel should contain
+/// the latest completed round and right panel the next round.
 #[cfg_attr(miri, ignore)]
 #[test]
 fn ocr_round_select_panels() {
     let engine = JapaneseOcrEngine::new().expect("OCR engine init failed");
     let rois = RoundNumberRoiConfig::default();
 
-    let raw = load_fixture("round_select_pro_1602x932.png");
+    let raw = load_fixture("round_select_pro_1600x900.png");
     let game = crop_titlebar(&raw);
 
     let left_text = ocr_roi(&engine, &game, &rois.select_completed_round);
@@ -89,11 +93,12 @@ fn ocr_round_select_panels() {
     eprintln!("left:  round={left_round:?} ocr=\"{left_text}\"");
     eprintln!("right: round={right_round:?} ocr=\"{right_text}\"");
 
-    let left_norm: String = left_text.chars().filter(|c| !c.is_whitespace()).collect();
-    let right_norm: String = right_text.chars().filter(|c| !c.is_whitespace()).collect();
+    // Fixture is "自動周回中（21/99）": completed=21, next=22.
+    // At least one panel must yield a round number; the other may be None
+    // if the ROI edge falls between rows.
     assert!(
-        left_norm.contains("ラウンド") || right_norm.contains("ラウンド"),
-        "neither panel OCR contains 'ラウンド' (left=\"{left_text}\", right=\"{right_text}\")"
+        left_round.is_some() || right_round.is_some(),
+        "expected at least one panel round number (left={left_round:?}, right={right_round:?})"
     );
 }
 
@@ -108,20 +113,21 @@ fn ocr_result_screen() {
     let engine = JapaneseOcrEngine::new().expect("OCR engine init failed");
     let roi = ResultScreenRoiConfig::default().text;
 
-    let fixture = "result_1602x932.png";
-    let path = format!(
-        "{}/../crates/dna-detector/tests/fixtures/result/{fixture}",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let raw = image::open(&path).expect("load").to_rgba8();
-    let game = crop_titlebar(&raw);
+    for fixture in &["result_1600x900.png", "retry_1600x900.png"] {
+        let path = format!(
+            "{}/../crates/dna-detector/tests/fixtures/result/{fixture}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let raw = image::open(&path).expect("load").to_rgba8();
+        let game = crop_titlebar(&raw);
 
-    let text = ocr_roi(&engine, &game, &roi);
-    let norm: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+        let text = ocr_roi(&engine, &game, &roi);
+        let norm: String = text.chars().filter(|c| !c.is_whitespace()).collect();
 
-    eprintln!("{fixture}: ocr=\"{text}\"");
-    assert!(
-        norm.contains("依頼終了"),
-        "{fixture}: expected '依頼終了', got \"{text}\""
-    );
+        eprintln!("{fixture}: ocr=\"{text}\"");
+        assert!(
+            norm.contains("依頼終了"),
+            "{fixture}: expected '依頼終了', got \"{text}\""
+        );
+    }
 }
