@@ -3,7 +3,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT = "http://10.2.21.155:5080/api/dna-assistant"
 OTEL_EXPORTER_OTLP_HEADERS = "Authorization=Basic ZGV2QG8yLnRlc3Q6ZGV2"
 RUST_LOG = "warn,dna=trace"
 ## renovate: datasource=github-releases packageName=openobserve/openobserve versioning=semver automerge=true
-OPENOBSERVE_VERSION = "v0.70.1"
+OPENOBSERVE_VERSION = "v0.70.2"
 
 [tools]
 "aqua:EmbarkStudios/cargo-deny" = "0.19.0"
