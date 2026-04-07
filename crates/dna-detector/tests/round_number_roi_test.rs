@@ -98,9 +98,10 @@ fn run_round_select_test(fixture_name: &str, roi_prefix: &str) {
 
 // ── Fixture mask + crop tests ───────────────────────────────────────
 
+/// Generate ROI crops from the post-update 1600x900 fixture.
 #[cfg_attr(miri, ignore)]
 #[test]
 #[ignore = "generates ROI crops for visual inspection"]
-fn crop_round_select_pro_1602x932() {
-    run_round_select_test("round_select_pro_1602x932.png", "pro_1602x932");
+fn crop_round_select_pro_1600x900() {
+    run_round_select_test("round_select_pro_1600x900.png", "pro_1600x900");
 }

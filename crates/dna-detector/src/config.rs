@@ -84,7 +84,10 @@ impl RoundNumberRoiConfig {
         Self {
             select_header: RoiDefinition {
                 x: 0.20,
-                y: 0.06,
+                // Post-update: the countdown number occupies y≈0.02-0.10;
+                // the "自動周回中（X/Y）" header text sits at y≈0.12-0.15.
+                // Start at 0.10 to clear the countdown and capture the header.
+                y: 0.10,
                 width: 0.60,
                 height: 0.08,
             },

@@ -79,14 +79,29 @@ fn mask_fixture(raw: &image::RgbaImage, rois: &[&RoiDefinition]) -> image::RgbaI
 #[cfg_attr(miri, ignore)]
 #[test]
 #[ignore = "generates ROI crops for visual inspection"]
-fn crop_result_1602x932() {
-    let raw = load_fixture("result_1602x932.png");
+fn crop_result_1600x900() {
+    let raw = load_fixture("result_1600x900.png");
 
     let masked = mask_fixture(&raw, &[&ROI]);
-    save_fixture("result_1602x932.png", &masked);
+    save_fixture("result_1600x900.png", &masked);
 
     let game = crop_titlebar(&masked);
     if let Some(crop) = ROI.crop(&game) {
-        save_fixture("roi_1602x932.png", &crop);
+        save_fixture("roi_1600x900_result.png", &crop);
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+#[ignore = "generates ROI crops for visual inspection"]
+fn crop_retry_1600x900() {
+    let raw = load_fixture("retry_1600x900.png");
+
+    let masked = mask_fixture(&raw, &[&ROI]);
+    save_fixture("retry_1600x900.png", &masked);
+
+    let game = crop_titlebar(&masked);
+    if let Some(crop) = ROI.crop(&game) {
+        save_fixture("roi_1600x900_retry.png", &crop);
     }
 }
