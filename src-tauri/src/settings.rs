@@ -9,6 +9,35 @@ use crate::monitor::MonitorConfig;
 /// Settings filename within the app data directory.
 const SETTINGS_FILE: &str = "settings.json";
 
+/// Tauri v2 bundle identifier — must match `tauri.conf.json`.
+const APP_IDENTIFIER: &str = "com.naa0yama.dna-assistant";
+
+/// Resolve the settings path without a Tauri `AppHandle`.
+///
+/// Mirrors Tauri v2's `app_data_dir` resolution on Windows (`%APPDATA%\<id>`).
+/// Used at startup before the Tauri runtime is initialised.
+fn pre_init_path() -> std::path::PathBuf {
+    std::env::var_os("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(APP_IDENTIFIER)
+        .join(SETTINGS_FILE)
+}
+
+/// Load `MonitorConfig` before the Tauri runtime is available.
+///
+/// Used at startup to read debug field overrides (`debug_rust_log`,
+/// `debug_otel_endpoint`, `debug_otel_headers`) and inject them as
+/// process-local environment variables before `telemetry::init()` runs.
+/// Returns [`MonitorConfig::default`] if the file is missing or invalid.
+pub fn pre_load() -> MonitorConfig {
+    let path = pre_init_path();
+    let Ok(json) = std::fs::read_to_string(&path) else {
+        return MonitorConfig::default();
+    };
+    serde_json::from_str::<MonitorConfig>(&json).unwrap_or_default()
+}
+
 /// Resolve the settings file path.
 fn settings_path(app_handle: &tauri::AppHandle) -> PathBuf {
     use tauri::Manager;

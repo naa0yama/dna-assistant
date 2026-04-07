@@ -389,7 +389,10 @@ const MS_KEYS = new Set([
   "capture_interval", "window_search_interval", "preview_interval",
 ]);
 const INT_KEYS = new Set(["max_capture_retries", "notification_max_repeat"]);
-const STRING_KEYS = new Set(["discord_webhook_url", "discord_mention_id"]);
+const STRING_KEYS = new Set([
+  "discord_webhook_url", "discord_mention_id",
+  "debug_rust_log", "debug_otel_endpoint", "debug_otel_headers",
+]);
 
 // Sidebar Discord toggle (outside settings form)
 const discordToggle = document.getElementById("discord-toggle");
@@ -428,13 +431,31 @@ async function loadSettings() {
   }
 }
 
+// --- Restart modal ---
+const restartModal = document.getElementById("restart-modal");
+document.getElementById("restart-modal-later").addEventListener("click", () => {
+  restartModal.close();
+});
+document.getElementById("restart-modal-confirm").addEventListener("click", async () => {
+  restartModal.close();
+  try {
+    await invoke("restart_app");
+  } catch (e) {
+    console.error("restart_app failed:", e);
+  }
+});
+
 settingsSaveBtn.addEventListener("click", async () => {
   try {
     const config = collectSettings();
-    await invoke("save_settings", { config });
+    const result = await invoke("save_settings", { config });
     updateDetectorEnabledState(config);
-    settingsSaveBtn.textContent = "Saved!";
-    setTimeout(() => { settingsSaveBtn.textContent = "Save"; }, 1500);
+    if (result.restart_required) {
+      restartModal.showModal();
+    } else {
+      settingsSaveBtn.textContent = "Saved!";
+      setTimeout(() => { settingsSaveBtn.textContent = "Save"; }, 1500);
+    }
   } catch (e) {
     console.error("save_settings failed:", e);
   }
@@ -444,9 +465,13 @@ settingsResetBtn.addEventListener("click", async () => {
   try {
     const defaults = await invoke("get_default_settings");
     populateSettings(defaults);
-    await invoke("save_settings", { config: defaults });
-    settingsResetBtn.textContent = "Reset!";
-    setTimeout(() => { settingsResetBtn.textContent = "Reset to defaults"; }, 1500);
+    const result = await invoke("save_settings", { config: defaults });
+    if (result.restart_required) {
+      restartModal.showModal();
+    } else {
+      settingsResetBtn.textContent = "Reset!";
+      setTimeout(() => { settingsResetBtn.textContent = "Reset to defaults"; }, 1500);
+    }
   } catch (e) {
     console.error("reset failed:", e);
   }

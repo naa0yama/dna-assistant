@@ -160,6 +160,18 @@ pub struct MonitorConfig {
     /// Discord user/role ID for mentions (e.g., "123456789012345678").
     #[serde(default)]
     pub discord_mention_id: String,
+    /// Override for `RUST_LOG` directive. Applied immediately on save without restart.
+    /// Empty string means fall back to the `RUST_LOG` environment variable, then `"warn,dna=info"`.
+    #[serde(default)]
+    pub debug_rust_log: String,
+    /// Override for `OTEL_EXPORTER_OTLP_ENDPOINT`. Requires app restart to take effect.
+    /// Empty string means fall back to the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
+    #[serde(default)]
+    pub debug_otel_endpoint: String,
+    /// Override for `OTEL_EXPORTER_OTLP_HEADERS`. Requires app restart to take effect.
+    /// Empty string means fall back to the `OTEL_EXPORTER_OTLP_HEADERS` environment variable.
+    #[serde(default)]
+    pub debug_otel_headers: String,
 }
 
 #[cfg(target_os = "windows")]
@@ -235,6 +247,9 @@ impl Default for MonitorConfig {
             discord_enabled: false,
             discord_webhook_url: String::new(),
             discord_mention_id: String::new(),
+            debug_rust_log: String::new(),
+            debug_otel_endpoint: String::new(),
+            debug_otel_headers: String::new(),
         }
     }
 }
@@ -1162,9 +1177,23 @@ mod platform {
     /// Minimum recommended width for reliable OCR detection.
     const MIN_OCR_WIDTH: u32 = 1600;
 
-    /// Known tested frame sizes (width x height, including titlebar).
-    const TESTED_RESOLUTIONS: &[(u32, u32)] =
-        &[(1282, 752), (1368, 800), (1602, 932), (1922, 1112)];
+    /// Known tested frame sizes (width x height).
+    ///
+    /// Includes two sets:
+    /// - Pre-update: WGC reported the full window including Win32 chrome (titlebar + border).
+    /// - Post-update: WGC reports the raw client/render area with no chrome padding.
+    const TESTED_RESOLUTIONS: &[(u32, u32)] = &[
+        // Pre-update: window with Win32 chrome (titlebar + border)
+        (1282, 752),
+        (1368, 800),
+        (1602, 932),
+        (1922, 1112),
+        // Post-update: WGC reports raw client/render area (no chrome padding)
+        (1280, 720),
+        (1366, 768),
+        (1600, 900),
+        (1920, 1080),
+    ];
 
     /// Check frame resolution and return a warning if below recommended.
     fn check_resolution(width: u32, height: u32) -> Option<String> {
@@ -1590,7 +1619,93 @@ mod platform {
         let y = if m <= 2 { y + 1 } else { y };
         (y, m, d)
     }
+
+    #[cfg(test)]
+    mod resolution_tests {
+        use super::check_resolution;
+
+        // Pre-update chrome-included sizes: width < MIN_OCR_WIDTH(1600) → always warns
+        #[test]
+        fn pre_update_sub_1600_warns_ocr_quality() {
+            for (w, h) in [(1282, 752), (1368, 800)] {
+                let msg = check_resolution(w, h).unwrap();
+                assert!(
+                    msg.contains("below recommended"),
+                    "{w}x{h}: unexpected message: {msg}"
+                );
+            }
+        }
+
+        // Pre-update chrome-included sizes with width >= 1600 are known → no warning
+        #[test]
+        fn pre_update_known_wide_resolutions_are_ok() {
+            assert!(check_resolution(1602, 932).is_none());
+            assert!(check_resolution(1922, 1112).is_none());
+        }
+
+        // Post-update: WGC reports raw client area; 1600x900 and 1920x1080 must pass
+        #[test]
+        fn post_update_client_area_resolutions_are_ok() {
+            assert!(check_resolution(1600, 900).is_none());
+            assert!(check_resolution(1920, 1080).is_none());
+        }
+
+        #[test]
+        fn unknown_wide_resolution_warns() {
+            let msg = check_resolution(2560, 1440).unwrap();
+            assert!(
+                msg.contains("has not been tested"),
+                "unexpected message: {msg}"
+            );
+        }
+    }
 } // mod platform
 
 #[cfg(target_os = "windows")]
 pub use platform::{CaptureInfo, LatestFrame, MonitorState, start, stop};
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monitor_config_debug_fields_default_empty() {
+        let config = MonitorConfig::default();
+        assert!(config.debug_rust_log.is_empty());
+        assert!(config.debug_otel_endpoint.is_empty());
+        assert!(config.debug_otel_headers.is_empty());
+    }
+
+    #[test]
+    fn monitor_config_debug_fields_roundtrip() {
+        let mut config = MonitorConfig::default();
+        config.debug_rust_log = "debug,dna=trace".to_owned();
+        config.debug_otel_endpoint = "http://localhost:5080/api/default/v1/traces".to_owned();
+        config.debug_otel_headers = "Authorization=Basic abc123".to_owned();
+
+        let json = serde_json::to_string(&config).unwrap();
+        let restored: MonitorConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.debug_rust_log, config.debug_rust_log);
+        assert_eq!(restored.debug_otel_endpoint, config.debug_otel_endpoint);
+        assert_eq!(restored.debug_otel_headers, config.debug_otel_headers);
+    }
+
+    #[test]
+    fn monitor_config_legacy_json_loads_with_debug_defaults() {
+        // Simulate a settings.json written before the debug fields were added.
+        let legacy = r#"{
+            "capture_interval": 200,
+            "window_search_interval": 3000,
+            "max_capture_retries": 3,
+            "preview_interval": 200,
+            "notification_cooldown": 60.0,
+            "notify_dialog_sustain": 3.0,
+            "notify_round_sustain": 5.0,
+            "notify_round_cooldown": 10.0
+        }"#;
+        let config: MonitorConfig = serde_json::from_str(legacy).unwrap();
+        assert!(config.debug_rust_log.is_empty());
+        assert!(config.debug_otel_endpoint.is_empty());
+        assert!(config.debug_otel_headers.is_empty());
+    }
+}

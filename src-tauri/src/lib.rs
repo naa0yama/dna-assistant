@@ -26,11 +26,12 @@ fn greet(name: &str) -> String {
 ///
 /// Returns an error if the Tauri runtime fails to initialize.
 #[allow(clippy::missing_errors_doc, clippy::exit)]
-fn build() -> tauri::Result<tauri::App> {
+fn build(filter_handle: telemetry::EnvFilterHandle) -> tauri::Result<tauri::App> {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
-        .manage(MonitorState::new());
+        .manage(MonitorState::new())
+        .manage(filter_handle);
 
     #[cfg(target_os = "windows")]
     {
@@ -50,6 +51,7 @@ fn build() -> tauri::Result<tauri::App> {
             commands::get_default_settings,
             commands::save_settings,
             commands::test_notification,
+            commands::restart_app,
         ]);
     }
 
@@ -68,7 +70,26 @@ fn build() -> tauri::Result<tauri::App> {
 /// Panics if the Tauri runtime fails to initialize.
 #[allow(clippy::missing_errors_doc, clippy::expect_used, clippy::exit)]
 pub fn run() {
-    let _guard = telemetry::init();
+    // Inject debug overrides as process-local env vars before telemetry init.
+    // Using set_var here is safe: this runs single-threaded before any threads are spawned.
+    #[cfg(target_os = "windows")]
+    {
+        let pre_config = settings::pre_load();
+        if !pre_config.debug_rust_log.is_empty() {
+            std::env::set_var("RUST_LOG", &pre_config.debug_rust_log);
+        }
+        if !pre_config.debug_otel_endpoint.is_empty() {
+            std::env::set_var(
+                "OTEL_EXPORTER_OTLP_ENDPOINT",
+                &pre_config.debug_otel_endpoint,
+            );
+        }
+        if !pre_config.debug_otel_headers.is_empty() {
+            std::env::set_var("OTEL_EXPORTER_OTLP_HEADERS", &pre_config.debug_otel_headers);
+        }
+    }
+
+    let (_guard, filter_handle) = telemetry::init();
 
     // Install app-level metrics instruments when OTel is enabled.
     // `_guard` is intentionally accessed here; the underscore keeps it alive on non-Windows.
@@ -78,7 +99,7 @@ pub fn run() {
         metrics::install(&meter);
     }
 
-    build()
+    build(filter_handle)
         .expect("failed to build tauri application")
         .run(|_app, _event| {});
 }
