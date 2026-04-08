@@ -67,20 +67,30 @@ jobs:
             dprint-v1-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache Tauri system dependencies
+        id: tauri-apt-cache
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/tauri-apt-cache
-          key: tauri-apt-${{ runner.os }}-${{ runner.arch }}-v1
+          key: tauri-apt-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/rust-ci.yaml') }}
+          restore-keys: |
+            tauri-apt-v2-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Install Tauri system dependencies
+      - name: Download Tauri system dependencies
+        if: steps.tauri-apt-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p ~/tauri-apt-cache/partial
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' \
+            /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+          mkdir -p ~/tauri-apt-cache
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get install -y --no-install-recommends --download-only \
             -o Dir::Cache::Archives="${HOME}/tauri-apt-cache" \
             libwebkit2gtk-4.1-dev libappindicator3-dev \
             librsvg2-dev patchelf
           sudo chown -R "$(id -u):$(id -g)" ~/tauri-apt-cache
+          rm -rf ~/tauri-apt-cache/partial ~/tauri-apt-cache/lock
+
+      - name: Install Tauri system dependencies
+        run: sudo dpkg -i ~/tauri-apt-cache/*.deb
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
@@ -97,44 +107,31 @@ jobs:
           mise run clippy:strict
 
   cross-check:
-    name: cross-check (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    name: cross-check (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
     needs: fmt
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-pc-windows-gnu
-            cross-pkgs: gcc-mingw-w64-x86-64
-          - target: aarch64-unknown-linux-gnu
-            cross-pkgs: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            scope: -p dna-detector
+            name: linux-dna-detector
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            scope: --all-targets
+            name: windows-msvc-all
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Cache cross-compilation packages
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: ~/cross-apt-cache
-          key: cross-apt-${{ runner.arch }}-${{ matrix.target }}-v1
-
-      - name: Install cross-compilation toolchain
-        env:
-          CROSS_PKGS: ${{ matrix.cross-pkgs }}
-        run: |
-          mkdir -p ~/cross-apt-cache/partial
-          sudo apt-get update -qq
-          # shellcheck disable=SC2086
-          sudo apt-get install -y --no-install-recommends \
-            -o Dir::Cache::Archives="${HOME}/cross-apt-cache" \
-            ${CROSS_PKGS}
-          sudo chown -R "$(id -u):$(id -g)" ~/cross-apt-cache
-
       - name: Add target
+        shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: rustup target add "${TARGET}"
@@ -146,33 +143,14 @@ jobs:
           sccache_disable_annotations: true
 
       - name: Check compilation for ${{ matrix.target }}
+        shell: bash
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo check -p dna-detector -p dna-capture --target "${TARGET}"
-
-  tauri-check-windows:
-    name: tauri-check (x86_64-pc-windows-msvc)
-    runs-on: windows-latest
-    needs: fmt
-    timeout-minutes: 25
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      - name: Rust setup
-        uses: ./.github/actions/act-setup-rust
-        with:
-          sccache: ${{ needs.fmt.outputs.sccache }}
-          sccache_disable_annotations: true
-
-      - name: Check dna-assistant for windows-msvc
-        shell: bash
+          SCOPE: ${{ matrix.scope }}
         run: |
           set -euxo pipefail
-          cargo check -p dna-assistant --target x86_64-pc-windows-msvc --all-targets
+          # shellcheck disable=SC2086
+          cargo check ${SCOPE} --target "${TARGET}"
 
   test:
     name: test
@@ -204,20 +182,30 @@ jobs:
             mise-v1-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache Tauri system dependencies
+        id: tauri-apt-cache
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/tauri-apt-cache
-          key: tauri-apt-${{ runner.os }}-${{ runner.arch }}-v1
+          key: tauri-apt-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/rust-ci.yaml') }}
+          restore-keys: |
+            tauri-apt-v2-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Install Tauri system dependencies
+      - name: Download Tauri system dependencies
+        if: steps.tauri-apt-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p ~/tauri-apt-cache/partial
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' \
+            /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+          mkdir -p ~/tauri-apt-cache
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get install -y --no-install-recommends --download-only \
             -o Dir::Cache::Archives="${HOME}/tauri-apt-cache" \
             libwebkit2gtk-4.1-dev libappindicator3-dev \
             librsvg2-dev patchelf
           sudo chown -R "$(id -u):$(id -g)" ~/tauri-apt-cache
+          rm -rf ~/tauri-apt-cache/partial ~/tauri-apt-cache/lock
+
+      - name: Install Tauri system dependencies
+        run: sudo dpkg -i ~/tauri-apt-cache/*.deb
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
