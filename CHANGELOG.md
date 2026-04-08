@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.1.7](https://github.com/naa0yama/dna-assistant/compare/v0.1.6...v0.1.7) - 2026-04-08
+
+### Development Environment 🔧
+
+- ci(rust-ci): rework cross-check targets and harden apt caching by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/48
+
+### Other Changes
+
+- fix(telemetry): normalize OTLP endpoint to base URL before export by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/50
+- style(telemetry): replace OpenObserve port with standard OTLP port 4318 by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/51
+
 ## [v0.1.6](https://github.com/naa0yama/dna-assistant/compare/v0.1.5...v0.1.6) - 2026-04-08
 
 ### Development Environment 🔧
