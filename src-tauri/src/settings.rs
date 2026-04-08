@@ -27,8 +27,8 @@ fn pre_init_path() -> std::path::PathBuf {
 /// Load `MonitorConfig` before the Tauri runtime is available.
 ///
 /// Used at startup to read debug field overrides (`debug_rust_log`,
-/// `debug_otel_endpoint`, `debug_otel_headers`) and inject them as
-/// process-local environment variables before `telemetry::init()` runs.
+/// `debug_otel_endpoint`, `debug_otel_headers`) and pass them directly to
+/// `telemetry::init()` as [`crate::telemetry::TelemetryOverrides`].
 /// Returns [`MonitorConfig::default`] if the file is missing or invalid.
 pub fn pre_load() -> MonitorConfig {
     let path = pre_init_path();

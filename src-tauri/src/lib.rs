@@ -68,26 +68,19 @@ fn build(filter_handle: telemetry::EnvFilterHandle) -> tauri::Result<tauri::App>
 /// Panics if the Tauri runtime fails to initialize.
 #[allow(clippy::missing_errors_doc, clippy::expect_used, clippy::exit)]
 pub fn run() {
-    // Inject debug overrides as process-local env vars before telemetry init.
-    // Using set_var here is safe: this runs single-threaded before any threads are spawned.
     #[cfg(target_os = "windows")]
-    {
-        let pre_config = settings::pre_load();
-        if !pre_config.debug_rust_log.is_empty() {
-            std::env::set_var("RUST_LOG", &pre_config.debug_rust_log);
-        }
-        if !pre_config.debug_otel_endpoint.is_empty() {
-            std::env::set_var(
-                "OTEL_EXPORTER_OTLP_ENDPOINT",
-                &pre_config.debug_otel_endpoint,
-            );
-        }
-        if !pre_config.debug_otel_headers.is_empty() {
-            std::env::set_var("OTEL_EXPORTER_OTLP_HEADERS", &pre_config.debug_otel_headers);
-        }
-    }
+    let pre_config = settings::pre_load();
 
-    let (_guard, filter_handle) = telemetry::init();
+    #[cfg(target_os = "windows")]
+    let overrides = telemetry::TelemetryOverrides {
+        rust_log: &pre_config.debug_rust_log,
+        otel_endpoint: &pre_config.debug_otel_endpoint,
+        otel_headers: &pre_config.debug_otel_headers,
+    };
+    #[cfg(not(target_os = "windows"))]
+    let overrides = telemetry::TelemetryOverrides::default();
+
+    let (_guard, filter_handle) = telemetry::init(&overrides);
 
     // Install app-level metrics instruments when OTel is enabled.
     // `_guard` is intentionally accessed here; the underscore keeps it alive on non-Windows.

@@ -18,7 +18,7 @@ jobs:
   fmt:
     name: fmt
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read # Required to checkout the repository
     outputs:
@@ -66,12 +66,21 @@ jobs:
           restore-keys: |
             dprint-v1-${{ runner.os }}-${{ runner.arch }}-
 
+      - name: Cache Tauri system dependencies
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/tauri-apt-cache
+          key: tauri-apt-${{ runner.os }}-${{ runner.arch }}-v1
+
       - name: Install Tauri system dependencies
         run: |
+          mkdir -p ~/tauri-apt-cache/partial
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
+            -o Dir::Cache::Archives="${HOME}/tauri-apt-cache" \
             libwebkit2gtk-4.1-dev libappindicator3-dev \
             librsvg2-dev patchelf
+          sudo chown -R "$(id -u):$(id -g)" ~/tauri-apt-cache
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
@@ -141,6 +150,30 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: cargo check -p dna-detector -p dna-capture --target "${TARGET}"
 
+  tauri-check-windows:
+    name: tauri-check (x86_64-pc-windows-msvc)
+    runs-on: windows-latest
+    needs: fmt
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Rust setup
+        uses: ./.github/actions/act-setup-rust
+        with:
+          sccache: ${{ needs.fmt.outputs.sccache }}
+          sccache_disable_annotations: true
+
+      - name: Check dna-assistant for windows-msvc
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo check -p dna-assistant --target x86_64-pc-windows-msvc --all-targets
+
   test:
     name: test
     runs-on: ubuntu-latest
@@ -170,12 +203,21 @@ jobs:
           restore-keys: |
             mise-v1-${{ runner.os }}-${{ runner.arch }}-
 
+      - name: Cache Tauri system dependencies
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/tauri-apt-cache
+          key: tauri-apt-${{ runner.os }}-${{ runner.arch }}-v1
+
       - name: Install Tauri system dependencies
         run: |
+          mkdir -p ~/tauri-apt-cache/partial
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
+            -o Dir::Cache::Archives="${HOME}/tauri-apt-cache" \
             libwebkit2gtk-4.1-dev libappindicator3-dev \
             librsvg2-dev patchelf
+          sudo chown -R "$(id -u):$(id -g)" ~/tauri-apt-cache
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:

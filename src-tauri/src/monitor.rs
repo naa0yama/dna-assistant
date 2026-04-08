@@ -168,11 +168,11 @@ pub struct MonitorConfig {
     /// Empty string means fall back to the `RUST_LOG` environment variable, then `"warn,dna=info"`.
     #[serde(default)]
     pub debug_rust_log: String,
-    /// Override for `OTEL_EXPORTER_OTLP_ENDPOINT`. Requires app restart to take effect.
+    /// Override for the OTLP endpoint. Requires app restart to take effect.
     /// Empty string means fall back to the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
     #[serde(default)]
     pub debug_otel_endpoint: String,
-    /// Override for `OTEL_EXPORTER_OTLP_HEADERS`. Requires app restart to take effect.
+    /// Override for OTLP headers as comma-separated `key=value` pairs. Requires app restart.
     /// Empty string means fall back to the `OTEL_EXPORTER_OTLP_HEADERS` environment variable.
     #[serde(default)]
     pub debug_otel_headers: String,

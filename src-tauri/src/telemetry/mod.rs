@@ -85,17 +85,38 @@ impl Drop for TelemetryGuard {
     }
 }
 
+/// Runtime overrides supplied by the caller before the telemetry layer starts.
+///
+/// Each field is optional via empty string: an empty `rust_log` falls back to
+/// the `RUST_LOG` environment variable (then `"warn,dna=info"`); empty
+/// `otel_endpoint` and `otel_headers` fall back to the standard
+/// `OTEL_EXPORTER_OTLP_*` environment variables handled by the SDK.
+#[derive(Default)]
+pub struct TelemetryOverrides<'a> {
+    /// `RUST_LOG`-style directive string, e.g. `"debug,dna=trace"`.
+    pub rust_log: &'a str,
+    /// OTLP HTTP endpoint, e.g. `"http://localhost:4318"`.
+    pub otel_endpoint: &'a str,
+    /// Comma-separated headers as `key=value,key=value`.
+    pub otel_headers: &'a str,
+}
+
 /// Initialize the tracing subscriber.
 ///
-/// When the `otel` feature is enabled and `OTEL_EXPORTER_OTLP_ENDPOINT` is set,
-/// spans are exported via OTLP. Otherwise, only the fmt layer is active.
+/// When the `otel` feature is enabled and an OTLP endpoint is configured
+/// (via `overrides.otel_endpoint` or the `OTEL_EXPORTER_OTLP_ENDPOINT`
+/// environment variable), spans are exported via OTLP. Otherwise, only the
+/// fmt layer is active.
 ///
 /// Returns `(TelemetryGuard, EnvFilterHandle)`.  The handle lets callers
 /// reload the `EnvFilter` at runtime (e.g. when the user saves `debug_rust_log`
 /// in Settings) without restarting the process.
-pub fn init() -> (TelemetryGuard, EnvFilterHandle) {
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,dna=info"));
+pub fn init(overrides: &TelemetryOverrides<'_>) -> (TelemetryGuard, EnvFilterHandle) {
+    let env_filter = if overrides.rust_log.is_empty() {
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,dna=info"))
+    } else {
+        EnvFilter::new(overrides.rust_log)
+    };
     let (filter_layer, handle) = reload::Layer::new(env_filter);
 
     let fmt_layer = tracing_subscriber::fmt::layer()
@@ -104,7 +125,8 @@ pub fn init() -> (TelemetryGuard, EnvFilterHandle) {
 
     #[cfg(feature = "otel")]
     {
-        let (otel_layer, tracer_provider, meter_provider) = init_otel();
+        let (otel_layer, tracer_provider, meter_provider) =
+            init_otel(overrides.otel_endpoint, overrides.otel_headers);
 
         // otel_layer is placed first (.with innermost) so its S = Registry,
         // matching OpenTelemetryLayer<Registry, Tracer>: Layer<Registry>.
@@ -137,9 +159,17 @@ pub fn init() -> (TelemetryGuard, EnvFilterHandle) {
 
 /// Build `OTel` layer, tracer provider, and meter provider.
 ///
-/// Activated only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+/// `endpoint_override` takes precedence over the `OTEL_EXPORTER_OTLP_ENDPOINT`
+/// environment variable; an empty string falls back to the env var.
+/// `headers_override` is parsed as comma-separated `key=value` pairs and takes
+/// precedence over the `OTEL_EXPORTER_OTLP_HEADERS` environment variable; an
+/// empty string lets the SDK read the env var.
+/// Returns `(None, None, None)` when no endpoint is configured.
 #[cfg(feature = "otel")]
-fn init_otel() -> (
+fn init_otel(
+    endpoint_override: &str,
+    headers_override: &str,
+) -> (
     Option<
         tracing_opentelemetry::OpenTelemetryLayer<
             tracing_subscriber::Registry,
@@ -152,19 +182,26 @@ fn init_otel() -> (
     use opentelemetry::KeyValue;
     use opentelemetry::metrics::MeterProvider as _;
     use opentelemetry::trace::TracerProvider;
-    use opentelemetry_otlp::{MetricExporter, SpanExporter};
+    use opentelemetry_otlp::{MetricExporter, SpanExporter, WithExportConfig, WithHttpConfig};
     use opentelemetry_sdk::Resource;
     use opentelemetry_sdk::metrics::SdkMeterProvider;
     use opentelemetry_sdk::trace::SdkTracerProvider;
     use tracing_opentelemetry::OpenTelemetryLayer;
 
-    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
-        .ok()
-        .filter(|ep| !ep.is_empty());
+    // Resolve endpoint: explicit override > env var > disabled.
+    let endpoint = if endpoint_override.is_empty() {
+        std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            .ok()
+            .filter(|ep| !ep.is_empty())
+    } else {
+        Some(endpoint_override.to_owned())
+    };
 
-    let Some(_endpoint) = endpoint else {
+    let Some(endpoint) = endpoint else {
         return (None, None, None);
     };
+
+    let header_map = parse_otlp_headers(headers_override);
 
     let resource = Resource::builder()
         .with_service_name(env!("CARGO_PKG_NAME"))
@@ -179,7 +216,13 @@ fn init_otel() -> (
         .build();
 
     // --- Tracer ---
-    let span_exporter = match SpanExporter::builder().with_http().build() {
+    let mut span_builder = SpanExporter::builder()
+        .with_http()
+        .with_endpoint(endpoint.clone());
+    if !header_map.is_empty() {
+        span_builder = span_builder.with_headers(header_map.clone());
+    }
+    let span_exporter = match span_builder.build() {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!("Failed to create OTLP span exporter, running without OTel: {e}");
@@ -195,7 +238,13 @@ fn init_otel() -> (
     let layer = OpenTelemetryLayer::new(tracer_provider.tracer(env!("CARGO_PKG_NAME")));
 
     // --- Meter ---
-    let metric_exporter = match MetricExporter::builder().with_http().build() {
+    let mut metric_builder = MetricExporter::builder()
+        .with_http()
+        .with_endpoint(endpoint);
+    if !header_map.is_empty() {
+        metric_builder = metric_builder.with_headers(header_map);
+    }
+    let metric_exporter = match metric_builder.build() {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!("Failed to create OTLP metric exporter, metrics disabled: {e}");
@@ -215,6 +264,30 @@ fn init_otel() -> (
     register_process_metrics(&meter);
 
     (Some(layer), Some(tracer_provider), Some(meter_provider))
+}
+
+/// Parse comma-separated `key=value` OTLP header pairs into a `HashMap`.
+///
+/// Whitespace around keys and values is trimmed. Entries that do not contain
+/// `=` or have an empty key are skipped. An empty `raw` string returns an
+/// empty map, which tells the builder to leave headers unset so the SDK falls
+/// back to the `OTEL_EXPORTER_OTLP_HEADERS` environment variable.
+#[cfg(feature = "otel")]
+fn parse_otlp_headers(raw: &str) -> std::collections::HashMap<String, String> {
+    if raw.is_empty() {
+        return std::collections::HashMap::new();
+    }
+    raw.split(',')
+        .filter_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            let key = parts.next()?.trim();
+            let value = parts.next()?.trim();
+            if key.is_empty() {
+                return None;
+            }
+            Some((key.to_owned(), value.to_owned()))
+        })
+        .collect()
 }
 
 /// Register `process.*` observable gauges using `sysinfo`.
@@ -392,13 +465,44 @@ fn register_thread_gauge(
 mod tests {
     #[test]
     #[cfg(feature = "otel")]
-    fn init_otel_respects_endpoint_env() {
-        // init_otel() should return (None, None, None) when endpoint is empty,
-        // or (Some, Some, Some) when a valid endpoint is configured.
-        // Both paths are valid — we just verify it does not panic.
-        let (layer, tracer, meter) = super::init_otel();
-        // All must be the same variant (all Some or all None when endpoint is empty)
-        let _ = (layer, tracer, meter);
+    fn init_otel_returns_none_when_no_endpoint() {
+        // Without an endpoint override and without OTEL_EXPORTER_OTLP_ENDPOINT set,
+        // init_otel should return (None, None, None) without panicking.
+        let (layer, tracer, meter) = super::init_otel("", "");
+        assert!(layer.is_none());
+        assert!(tracer.is_none());
+        assert!(meter.is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn parse_otlp_headers_empty() {
+        assert!(super::parse_otlp_headers("").is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn parse_otlp_headers_single() {
+        let map = super::parse_otlp_headers("x-api-key=secret");
+        assert_eq!(map.get("x-api-key").map(String::as_str), Some("secret"));
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn parse_otlp_headers_multiple_with_whitespace() {
+        let map = super::parse_otlp_headers(" k1 = v1 , k2=v2 ");
+        assert_eq!(map.get("k1").map(String::as_str), Some("v1"));
+        assert_eq!(map.get("k2").map(String::as_str), Some("v2"));
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn parse_otlp_headers_skips_malformed() {
+        // Entry without '=' should be dropped; valid entry still parsed.
+        let map = super::parse_otlp_headers("no-equals,k=v");
+        assert!(!map.contains_key("no-equals"));
+        assert_eq!(map.get("k").map(String::as_str), Some("v"));
     }
 
     #[test]
