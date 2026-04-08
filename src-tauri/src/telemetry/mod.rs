@@ -157,10 +157,40 @@ pub fn init(overrides: &TelemetryOverrides<'_>) -> (TelemetryGuard, EnvFilterHan
     }
 }
 
+/// Normalise a user-supplied OTLP endpoint string into a base URL.
+///
+/// The OTLP HTTP exporter's `.with_endpoint()` treats its argument as the
+/// **full signal URL** (no per-signal path is appended), whereas the
+/// `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable is treated as a base URL
+/// and has `/v1/traces` / `/v1/metrics` appended automatically by the SDK.
+///
+/// This function strips any known signal-specific suffix so that callers can
+/// construct the correct per-signal URL unconditionally:
+///
+/// - `http://host:5080/api/default`         → unchanged (already a base URL)
+/// - `http://host:5080/api/default/`        → `http://host:5080/api/default`
+/// - `http://host:5080/api/default/v1/traces` → `http://host:5080/api/default`
+/// - `http://host:5080/api/default/v1/metrics` → `http://host:5080/api/default`
+#[cfg(feature = "otel")]
+fn normalize_otlp_base(endpoint: &str) -> String {
+    const SIGNAL_SUFFIXES: &[&str] = &["/v1/traces", "/v1/metrics", "/v1/logs"];
+
+    let trimmed = endpoint.trim_end_matches('/');
+    for suffix in SIGNAL_SUFFIXES {
+        if let Some(base) = trimmed.strip_suffix(suffix) {
+            return base.trim_end_matches('/').to_owned();
+        }
+    }
+    trimmed.to_owned()
+}
+
 /// Build `OTel` layer, tracer provider, and meter provider.
 ///
-/// `endpoint_override` takes precedence over the `OTEL_EXPORTER_OTLP_ENDPOINT`
-/// environment variable; an empty string falls back to the env var.
+/// `endpoint_override` is treated as a base URL: any trailing `/v1/traces`,
+/// `/v1/metrics`, or `/v1/logs` suffix is stripped automatically, so both
+/// `"http://host:4318"` and `"http://host:4318/v1/traces"` are accepted.
+/// An empty string falls back to the `OTEL_EXPORTER_OTLP_ENDPOINT` environment
+/// variable (where the SDK appends the signal path as per the `OTel` spec).
 /// `headers_override` is parsed as comma-separated `key=value` pairs and takes
 /// precedence over the `OTEL_EXPORTER_OTLP_HEADERS` environment variable; an
 /// empty string lets the SDK read the env var.
@@ -201,6 +231,10 @@ fn init_otel(
         return (None, None, None);
     };
 
+    let base = normalize_otlp_base(&endpoint);
+    let traces_endpoint = format!("{base}/v1/traces");
+    let metrics_endpoint = format!("{base}/v1/metrics");
+
     let header_map = parse_otlp_headers(headers_override);
 
     let resource = Resource::builder()
@@ -218,7 +252,7 @@ fn init_otel(
     // --- Tracer ---
     let mut span_builder = SpanExporter::builder()
         .with_http()
-        .with_endpoint(endpoint.clone());
+        .with_endpoint(traces_endpoint);
     if !header_map.is_empty() {
         span_builder = span_builder.with_headers(header_map.clone());
     }
@@ -240,7 +274,7 @@ fn init_otel(
     // --- Meter ---
     let mut metric_builder = MetricExporter::builder()
         .with_http()
-        .with_endpoint(endpoint);
+        .with_endpoint(metrics_endpoint);
     if !header_map.is_empty() {
         metric_builder = metric_builder.with_headers(header_map);
     }
@@ -465,9 +499,66 @@ fn register_thread_gauge(
 mod tests {
     #[test]
     #[cfg(feature = "otel")]
+    fn normalize_otlp_base_unchanged() {
+        assert_eq!(
+            super::normalize_otlp_base("http://h:5080/api/default"),
+            "http://h:5080/api/default"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn normalize_otlp_base_strips_trailing_slash() {
+        assert_eq!(
+            super::normalize_otlp_base("http://h:5080/api/default/"),
+            "http://h:5080/api/default"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn normalize_otlp_base_strips_v1_traces() {
+        assert_eq!(
+            super::normalize_otlp_base("http://h:5080/api/default/v1/traces"),
+            "http://h:5080/api/default"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn normalize_otlp_base_strips_v1_metrics() {
+        assert_eq!(
+            super::normalize_otlp_base("http://h:5080/api/default/v1/metrics"),
+            "http://h:5080/api/default"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn normalize_otlp_base_strips_v1_logs() {
+        assert_eq!(
+            super::normalize_otlp_base("http://h:5080/api/default/v1/logs"),
+            "http://h:5080/api/default"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn normalize_otlp_base_strips_suffix_with_trailing_slash() {
+        assert_eq!(
+            super::normalize_otlp_base("http://h:5080/api/default/v1/traces/"),
+            "http://h:5080/api/default"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
     fn init_otel_returns_none_when_no_endpoint() {
-        // Without an endpoint override and without OTEL_EXPORTER_OTLP_ENDPOINT set,
-        // init_otel should return (None, None, None) without panicking.
+        // This test requires OTEL_EXPORTER_OTLP_ENDPOINT to be unset.
+        // Skip if it is already set in the environment (e.g. CI / dev env).
+        if std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some() {
+            return;
+        }
         let (layer, tracer, meter) = super::init_otel("", "");
         assert!(layer.is_none());
         assert!(tracer.is_none());
