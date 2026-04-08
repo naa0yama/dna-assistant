@@ -167,10 +167,10 @@ pub fn init(overrides: &TelemetryOverrides<'_>) -> (TelemetryGuard, EnvFilterHan
 /// This function strips any known signal-specific suffix so that callers can
 /// construct the correct per-signal URL unconditionally:
 ///
-/// - `http://host:5080/api/default`         → unchanged (already a base URL)
-/// - `http://host:5080/api/default/`        → `http://host:5080/api/default`
-/// - `http://host:5080/api/default/v1/traces` → `http://host:5080/api/default`
-/// - `http://host:5080/api/default/v1/metrics` → `http://host:5080/api/default`
+/// - `http://localhost:4318`           → unchanged (already a base URL)
+/// - `http://localhost:4318/`          → `http://localhost:4318`
+/// - `http://localhost:4318/v1/traces` → `http://localhost:4318`
+/// - `http://localhost:4318/v1/metrics` → `http://localhost:4318`
 #[cfg(feature = "otel")]
 fn normalize_otlp_base(endpoint: &str) -> String {
     const SIGNAL_SUFFIXES: &[&str] = &["/v1/traces", "/v1/metrics", "/v1/logs"];
@@ -501,8 +501,8 @@ mod tests {
     #[cfg(feature = "otel")]
     fn normalize_otlp_base_unchanged() {
         assert_eq!(
-            super::normalize_otlp_base("http://h:5080/api/default"),
-            "http://h:5080/api/default"
+            super::normalize_otlp_base("http://localhost:4318"),
+            "http://localhost:4318"
         );
     }
 
@@ -510,8 +510,8 @@ mod tests {
     #[cfg(feature = "otel")]
     fn normalize_otlp_base_strips_trailing_slash() {
         assert_eq!(
-            super::normalize_otlp_base("http://h:5080/api/default/"),
-            "http://h:5080/api/default"
+            super::normalize_otlp_base("http://localhost:4318/"),
+            "http://localhost:4318"
         );
     }
 
@@ -519,8 +519,8 @@ mod tests {
     #[cfg(feature = "otel")]
     fn normalize_otlp_base_strips_v1_traces() {
         assert_eq!(
-            super::normalize_otlp_base("http://h:5080/api/default/v1/traces"),
-            "http://h:5080/api/default"
+            super::normalize_otlp_base("http://localhost:4318/v1/traces"),
+            "http://localhost:4318"
         );
     }
 
@@ -528,8 +528,8 @@ mod tests {
     #[cfg(feature = "otel")]
     fn normalize_otlp_base_strips_v1_metrics() {
         assert_eq!(
-            super::normalize_otlp_base("http://h:5080/api/default/v1/metrics"),
-            "http://h:5080/api/default"
+            super::normalize_otlp_base("http://localhost:4318/v1/metrics"),
+            "http://localhost:4318"
         );
     }
 
@@ -537,8 +537,8 @@ mod tests {
     #[cfg(feature = "otel")]
     fn normalize_otlp_base_strips_v1_logs() {
         assert_eq!(
-            super::normalize_otlp_base("http://h:5080/api/default/v1/logs"),
-            "http://h:5080/api/default"
+            super::normalize_otlp_base("http://localhost:4318/v1/logs"),
+            "http://localhost:4318"
         );
     }
 
@@ -546,8 +546,8 @@ mod tests {
     #[cfg(feature = "otel")]
     fn normalize_otlp_base_strips_suffix_with_trailing_slash() {
         assert_eq!(
-            super::normalize_otlp_base("http://h:5080/api/default/v1/traces/"),
-            "http://h:5080/api/default"
+            super::normalize_otlp_base("http://localhost:4318/v1/traces/"),
+            "http://localhost:4318"
         );
     }
 

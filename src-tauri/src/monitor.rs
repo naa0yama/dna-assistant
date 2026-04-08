@@ -1687,7 +1687,7 @@ mod tests {
     fn monitor_config_debug_fields_roundtrip() {
         let mut config = MonitorConfig::default();
         config.debug_rust_log = "debug,dna=trace".to_owned();
-        config.debug_otel_endpoint = "http://localhost:5080/api/default/v1/traces".to_owned();
+        config.debug_otel_endpoint = "http://localhost:4318".to_owned();
         config.debug_otel_headers = "Authorization=Basic abc123".to_owned();
 
         let json = serde_json::to_string(&config).unwrap();
