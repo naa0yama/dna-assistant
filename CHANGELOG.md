@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.6](https://github.com/naa0yama/dna-assistant/compare/v0.1.5...v0.1.6) - 2026-04-08
+
+### Development Environment 🔧
+
+- chore(deps): update taiki-e/install-action action to v2.70.4 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/45
+- fix(telemetry): remove set_var, add Windows MSVC check in CI by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/47
+
 ## [v0.1.5](https://github.com/naa0yama/dna-assistant/compare/v0.1.4...v0.1.5) - 2026-04-07
 
 ### Documentation 🗒️
