@@ -55,7 +55,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(target_os = "windows")]
 use tauri::{AppHandle, Emitter};
 #[cfg(target_os = "windows")]
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 #[cfg(all(target_os = "windows", feature = "otel"))]
 use crate::telemetry::conventions::{attribute as dna_attr, kind as dna_kind};
@@ -648,7 +648,6 @@ mod platform {
     }
 
     /// Main monitor loop running on a background thread.
-    #[instrument(skip_all, name = "monitor_loop")]
     #[allow(clippy::needless_pass_by_value)] // args are moved from thread::spawn closure
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)] // loop body is inherently sequential
     fn monitor_loop(
