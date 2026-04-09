@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.1.8](https://github.com/naa0yama/dna-assistant/compare/v0.1.7...v0.1.8) - 2026-04-09
+
+### Development Environment 🔧
+
+- chore(deps): update dependency dprint to v0.53.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/52
+- chore(deps): update taiki-e/install-action action to v2.71.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/53
+- chore(deps): update taiki-e/install-action action to v2.71.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/55
+
+### Other Changes
+
+- fix(telemetry): remove #[instrument] from monitor_loop to prevent span explosion by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/56
+
 ## [v0.1.7](https://github.com/naa0yama/dna-assistant/compare/v0.1.6...v0.1.7) - 2026-04-08
 
 ### Development Environment 🔧
