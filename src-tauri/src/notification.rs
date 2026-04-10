@@ -95,6 +95,19 @@ const fn trigger_config(kind: TriggerKind, cfg: &MonitorConfig) -> TriggerConfig
 /// Shared reference to the latest captured frame for screenshot attachment.
 pub type SharedFrame = Arc<Mutex<crate::monitor::LatestFrame>>;
 
+/// Build a reusable HTTP client for Discord webhook delivery.
+///
+/// Installs the global rustls crypto provider on first call (subsequent calls
+/// are no-ops). A 30-second request timeout prevents indefinite blocking.
+fn build_http_client() -> reqwest::blocking::Client {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::blocking::Client::builder()
+        .use_rustls_tls()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new())
+}
+
 /// Manages notification triggers with sustain-time and cooldown logic.
 #[derive(Debug)]
 pub struct NotificationManager {
@@ -117,6 +130,8 @@ pub struct NotificationManager {
     latest_frame: Option<SharedFrame>,
     /// Timing configuration.
     config: MonitorConfig,
+    /// Reusable HTTP client for Discord webhook delivery.
+    http_client: reqwest::blocking::Client,
 }
 
 impl NotificationManager {
@@ -132,6 +147,7 @@ impl NotificationManager {
             current_round: None,
             latest_frame: None,
             config: config.clone(),
+            http_client: build_http_client(),
         }
     }
 
@@ -452,17 +468,24 @@ impl NotificationManager {
         if self.config.is_discord_active() {
             let image_data = self.capture_screenshot();
             let mention_id = if mention {
-                Some(self.config.discord_mention_id.as_str())
+                Some(self.config.discord_mention_id.clone())
             } else {
                 None
             };
-            Self::send_discord(
-                &self.config.discord_webhook_url,
-                title,
-                body,
-                image_data,
-                mention_id,
-            );
+            let client = self.http_client.clone();
+            let webhook_url = self.config.discord_webhook_url.clone();
+            let title = title.to_owned();
+            let body = body.to_owned();
+            std::thread::spawn(move || {
+                Self::send_discord(
+                    &client,
+                    &webhook_url,
+                    &title,
+                    &body,
+                    image_data,
+                    mention_id.as_deref(),
+                );
+            });
         } else {
             Self::send_toast(title, body);
         }
@@ -476,17 +499,24 @@ impl NotificationManager {
         Self::send_toast(title, body);
         if self.config.is_discord_active() {
             let mention_id = if mention {
-                Some(self.config.discord_mention_id.as_str())
+                Some(self.config.discord_mention_id.clone())
             } else {
                 None
             };
-            Self::send_discord(
-                &self.config.discord_webhook_url,
-                title,
-                body,
-                None,
-                mention_id,
-            );
+            let client = self.http_client.clone();
+            let webhook_url = self.config.discord_webhook_url.clone();
+            let title = title.to_owned();
+            let body = body.to_owned();
+            std::thread::spawn(move || {
+                Self::send_discord(
+                    &client,
+                    &webhook_url,
+                    &title,
+                    &body,
+                    None,
+                    mention_id.as_deref(),
+                );
+            });
         }
     }
 
@@ -544,9 +574,20 @@ impl NotificationManager {
             let mention_id = if config.discord_mention_id.is_empty() {
                 None
             } else {
-                Some(config.discord_mention_id.as_str())
+                Some(config.discord_mention_id.clone())
             };
-            Self::send_discord(&config.discord_webhook_url, title, body, None, mention_id);
+            let client = build_http_client();
+            let webhook_url = config.discord_webhook_url.clone();
+            std::thread::spawn(move || {
+                Self::send_discord(
+                    &client,
+                    &webhook_url,
+                    title,
+                    body,
+                    None,
+                    mention_id.as_deref(),
+                );
+            });
         } else {
             Self::send_toast(title, body);
         }
@@ -554,6 +595,7 @@ impl NotificationManager {
 
     /// Send a notification via Discord webhook with optional image and mention.
     fn send_discord(
+        client: &reqwest::blocking::Client,
         webhook_url: &str,
         title: &str,
         body: &str,
@@ -566,19 +608,6 @@ impl NotificationManager {
             has_image = image.is_some(),
             "sending Discord webhook"
         );
-
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
-        let client = match reqwest::blocking::Client::builder()
-            .use_rustls_tls()
-            .build()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                warn!(%e, "failed to create HTTP client for Discord webhook");
-                return;
-            }
-        };
 
         // Build text content: title (+ mention if configured).
         // Discord notification preview only shows `content`, not embed fields.
