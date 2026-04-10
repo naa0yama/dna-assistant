@@ -9,6 +9,7 @@ const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebar-toggle");
 const navItems = document.querySelectorAll(".nav-item");
 const pages = document.querySelectorAll(".page");
+const appVersion = document.getElementById("app-version");
 
 // Main page
 const statusBadge = document.getElementById("status-badge");
@@ -505,4 +506,7 @@ invoke("get_status").then(updateStatusUI).catch(console.error);
 invoke("get_settings").then((config) => {
   updateDetectorEnabledState(config);
   discordToggle.checked = config.discord_enabled || false;
+}).catch(console.error);
+invoke("get_app_version").then((v) => {
+  appVersion.textContent = "v" + v;
 }).catch(console.error);
