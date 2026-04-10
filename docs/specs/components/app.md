@@ -23,15 +23,15 @@ DNA Assistant のアプリケーションレイヤー(`src-tauri`)は、`dna-cap
 
 ## 1.2 モジュール構成
 
-| モジュール               | ファイル                   | 責務                                                     | プラットフォーム       |
-| ------------------------ | -------------------------- | -------------------------------------------------------- | ---------------------- |
-| `commands`               | `commands.rs`              | IPC コマンドハンドラ(start/stop/status/preview/settings) | `cfg(windows)`         |
-| `monitor`                | `monitor.rs`               | キャプチャ → 検出 → OCR → 通知のバックグラウンドループ   | `cfg(windows)`         |
-| `notification`           | `notification.rs`          | Toast 通知の送信・重複制御                               | `cfg(windows)`         |
-| `settings`               | `settings.rs`              | 設定の永続化(JSON ファイルへの読み書き)                  | `cfg(windows)`         |
-| `telemetry`              | `telemetry/mod.rs`         | tracing/OTel 初期化・プロセスレベルメトリクス登録        | クロスプラットフォーム |
-| `telemetry::metrics`     | `telemetry/metrics.rs`     | OTel 計装 — `AppMetrics` グローバルシングルトン          | `cfg(windows)`         |
-| `telemetry::conventions` | `telemetry/conventions.rs` | `dna.*` メトリクス名・属性キー定数                       | `cfg(otel)`            |
+| モジュール               | ファイル                   | 責務                                                                  | プラットフォーム       |
+| ------------------------ | -------------------------- | --------------------------------------------------------------------- | ---------------------- |
+| `commands`               | `commands.rs`              | IPC コマンドハンドラ(start/stop/status/preview/settings)              | `cfg(windows)`         |
+| `monitor`                | `monitor.rs`               | キャプチャ → 検出 → OCR → 通知のバックグラウンドループ                | `cfg(windows)`         |
+| `notification`           | `notification.rs`          | Toast 通知の送信・重複制御                                            | `cfg(windows)`         |
+| `settings`               | `settings.rs`              | 設定の永続化(JSON ファイルへの読み書き)                               | `cfg(windows)`         |
+| `telemetry`              | `telemetry/mod.rs`         | tracing/OTel 初期化・ログエクスポーター・プロセスレベルメトリクス登録 | クロスプラットフォーム |
+| `telemetry::metrics`     | `telemetry/metrics.rs`     | OTel 計装 — `AppMetrics` グローバルシングルトン                       | `cfg(windows)`         |
+| `telemetry::conventions` | `telemetry/conventions.rs` | `dna.*` メトリクス名・属性キー定数                                    | `cfg(otel)`            |
 
 Linux では `MonitorState` が空のスタブ構造体としてコンパイルされ、ワークスペース全体の `cargo check` が可能。
 
@@ -159,6 +159,15 @@ fn get_settings(state: State<'_, MonitorState>) -> MonitorConfig;
 async fn save_settings(app_handle: AppHandle, state: State<'_, MonitorState>, config: MonitorConfig) -> Result<(), String>;
 ```
 
+### `get_app_version`
+
+アプリケーションのバージョン文字列(例: `"0.1.8"`)を返す。起動時にフロントエンドがサイドバーに表示するために使用する。
+
+```rust
+#[tauri::command]
+pub fn get_app_version(app: tauri::AppHandle) -> String;
+```
+
 ### `greet`(既存)
 
 接続テスト用コマンド。
@@ -243,7 +252,7 @@ Detector → [OCR 補正] → NotificationManager(持続時間判定) → Toast
 ### IPC 連携
 
 - ボタンクリック時: `invoke("start_monitoring")` / `invoke("stop_monitoring")`
-- 初回ロード時: `invoke("get_status")` でステータス取得
+- 初回ロード時: `invoke("get_status")` でステータス取得、`invoke("get_app_version")` でバージョン取得(サイドバーに表示)
 - リアルタイム更新: `listen("monitor-status")` / `listen("detection-event")`
 
 ## 1.8 Tauri 状態管理
@@ -293,6 +302,7 @@ pub struct MonitorStatus {
 - [x] 通知判定ロジック — `NotificationManager` + `TransitionFilter` 実装済み
 - [x] 検出結果のスクリーンショット保存 — `TRACE` レベル時に `debug-frames/` へ保存
 - [x] OTel メトリクス計装 — `telemetry/metrics.rs` の `AppMetrics` でモニターループ・キャプチャ・OCR・WGC ライフサイクル等を計装。`telemetry/mod.rs` でプロセスレベルメトリクス(`process.memory.*`, `process.cpu.utilization`, `process.uptime`)を `sysinfo` 経由で登録。`telemetry/conventions.rs` で `dna.*` メトリクス名・属性キーを定数として一元管理
+- [x] OTel ログエクスポーター — `OpenTelemetryTracingBridge` (`opentelemetry-appender-tracing`) を `telemetry/mod.rs` に追加。tracing ログを OTel logs シグナルとして OTLP エクスポート。シャットダウン順序はトレーサー → メーター → ロガーの順で制御
 - [ ] システムトレイアイコン — 最小化時にトレイに格納、状態をアイコンで表示
 - [ ] キャプチャ間隔のユーザー設定 UI — 現在はデフォルト 2 秒固定
 - [ ] 通知音のカスタマイズ — Windows Toast のオーディオ設定

@@ -202,6 +202,12 @@ pub fn restart_app(app: tauri::AppHandle) {
     app.restart();
 }
 
+/// Return the application version string (e.g. `"0.1.8"`).
+#[tauri::command]
+pub fn get_app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 /// Send a test notification (Discord or Windows toast depending on config).
 #[tauri::command]
 #[instrument(skip_all)]
