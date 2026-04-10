@@ -47,11 +47,14 @@ impl EnvFilterHandle {
 
 /// Guard that shuts down `OTel` providers on drop.
 #[must_use]
+#[allow(clippy::struct_field_names)]
 pub struct TelemetryGuard {
     #[cfg(feature = "otel")]
     tracer_provider: Option<opentelemetry_sdk::trace::SdkTracerProvider>,
     #[cfg(feature = "otel")]
     meter_provider: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
+    #[cfg(feature = "otel")]
+    logger_provider: Option<opentelemetry_sdk::logs::SdkLoggerProvider>,
 }
 
 #[cfg(all(target_os = "windows", feature = "otel"))]
@@ -67,8 +70,9 @@ impl TelemetryGuard {
 
 impl Drop for TelemetryGuard {
     fn drop(&mut self) {
-        // Shut down tracer first so it can emit final spans while the metric
-        // exporter is still alive, then shut down metrics.
+        // Shutdown order: tracer → meter → logger.
+        // Logger shuts down last so tracer/meter errors can still be exported
+        // via OTel logs while the logger provider is still live.
         #[cfg(feature = "otel")]
         {
             if let Some(provider) = self.tracer_provider.take()
@@ -80,6 +84,11 @@ impl Drop for TelemetryGuard {
                 && let Err(e) = provider.shutdown()
             {
                 tracing::error!("OTel meter shutdown error: {e}");
+            }
+            if let Some(provider) = self.logger_provider.take()
+                && let Err(e) = provider.shutdown()
+            {
+                tracing::error!("OTel logger shutdown error: {e}");
             }
         }
     }
@@ -125,14 +134,15 @@ pub fn init(overrides: &TelemetryOverrides<'_>) -> (TelemetryGuard, EnvFilterHan
 
     #[cfg(feature = "otel")]
     {
-        let (otel_layer, tracer_provider, meter_provider) =
+        let (otel_layer, tracer_provider, meter_provider, log_bridge, logger_provider) =
             init_otel(overrides.otel_endpoint, overrides.otel_headers);
 
-        // otel_layer is placed first (.with innermost) so its S = Registry,
-        // matching OpenTelemetryLayer<Registry, Tracer>: Layer<Registry>.
-        // filter_layer then wraps the otel-layered registry.
+        // Layer order (innermost first): otel_layer → log_bridge → filter_layer → fmt_layer.
+        // log_bridge is placed after otel_layer so trace context (TraceId/SpanId) is
+        // available when log records are created.
         tracing_subscriber::registry()
             .with(otel_layer)
+            .with(log_bridge)
             .with(filter_layer)
             .with(fmt_layer)
             .init();
@@ -141,6 +151,7 @@ pub fn init(overrides: &TelemetryOverrides<'_>) -> (TelemetryGuard, EnvFilterHan
             TelemetryGuard {
                 tracer_provider,
                 meter_provider,
+                logger_provider,
             },
             EnvFilterHandle::from_handle(handle),
         )
@@ -196,6 +207,7 @@ fn normalize_otlp_base(endpoint: &str) -> String {
 /// empty string lets the SDK read the env var.
 /// Returns `(None, None, None)` when no endpoint is configured.
 #[cfg(feature = "otel")]
+#[allow(clippy::type_complexity, clippy::too_many_lines)]
 fn init_otel(
     endpoint_override: &str,
     headers_override: &str,
@@ -208,12 +220,22 @@ fn init_otel(
     >,
     Option<opentelemetry_sdk::trace::SdkTracerProvider>,
     Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
+    Option<
+        opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge<
+            opentelemetry_sdk::logs::SdkLoggerProvider,
+            opentelemetry_sdk::logs::SdkLogger,
+        >,
+    >,
+    Option<opentelemetry_sdk::logs::SdkLoggerProvider>,
 ) {
     use opentelemetry::KeyValue;
     use opentelemetry::metrics::MeterProvider as _;
     use opentelemetry::trace::TracerProvider;
-    use opentelemetry_otlp::{MetricExporter, SpanExporter, WithExportConfig, WithHttpConfig};
+    use opentelemetry_otlp::{
+        LogExporter, MetricExporter, SpanExporter, WithExportConfig, WithHttpConfig,
+    };
     use opentelemetry_sdk::Resource;
+    use opentelemetry_sdk::logs::SdkLoggerProvider;
     use opentelemetry_sdk::metrics::SdkMeterProvider;
     use opentelemetry_sdk::trace::SdkTracerProvider;
     use tracing_opentelemetry::OpenTelemetryLayer;
@@ -228,7 +250,7 @@ fn init_otel(
     };
 
     let Some(endpoint) = endpoint else {
-        return (None, None, None);
+        return (None, None, None, None, None);
     };
 
     let base = normalize_otlp_base(&endpoint);
@@ -260,7 +282,7 @@ fn init_otel(
         Ok(e) => e,
         Err(e) => {
             tracing::warn!("Failed to create OTLP span exporter, running without OTel: {e}");
-            return (None, None, None);
+            return (None, None, None, None, None);
         }
     };
 
@@ -276,18 +298,18 @@ fn init_otel(
         .with_http()
         .with_endpoint(metrics_endpoint);
     if !header_map.is_empty() {
-        metric_builder = metric_builder.with_headers(header_map);
+        metric_builder = metric_builder.with_headers(header_map.clone());
     }
     let metric_exporter = match metric_builder.build() {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!("Failed to create OTLP metric exporter, metrics disabled: {e}");
-            return (Some(layer), Some(tracer_provider), None);
+            return (Some(layer), Some(tracer_provider), None, None, None);
         }
     };
 
     let meter_provider = SdkMeterProvider::builder()
-        .with_resource(resource)
+        .with_resource(resource.clone())
         .with_periodic_exporter(metric_exporter)
         .build();
 
@@ -297,7 +319,37 @@ fn init_otel(
     let meter = meter_provider.meter(env!("CARGO_PKG_NAME"));
     register_process_metrics(&meter);
 
-    (Some(layer), Some(tracer_provider), Some(meter_provider))
+    // --- Logger ---
+    let logs_endpoint = format!("{base}/v1/logs");
+    let mut log_builder = LogExporter::builder()
+        .with_http()
+        .with_endpoint(logs_endpoint);
+    if !header_map.is_empty() {
+        log_builder = log_builder.with_headers(header_map);
+    }
+    let (log_bridge, logger_provider) = match log_builder.build() {
+        Ok(log_exporter) => {
+            let provider = SdkLoggerProvider::builder()
+                .with_resource(resource)
+                .with_batch_exporter(log_exporter)
+                .build();
+            let bridge =
+                opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(&provider);
+            (Some(bridge), Some(provider))
+        }
+        Err(e) => {
+            tracing::warn!("Failed to create OTLP log exporter, logs disabled: {e}");
+            (None, None)
+        }
+    };
+
+    (
+        Some(layer),
+        Some(tracer_provider),
+        Some(meter_provider),
+        log_bridge,
+        logger_provider,
+    )
 }
 
 /// Parse comma-separated `key=value` OTLP header pairs into a `HashMap`.
@@ -559,10 +611,12 @@ mod tests {
         if std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some() {
             return;
         }
-        let (layer, tracer, meter) = super::init_otel("", "");
+        let (layer, tracer, meter, log_bridge, logger) = super::init_otel("", "");
         assert!(layer.is_none());
         assert!(tracer.is_none());
         assert!(meter.is_none());
+        assert!(log_bridge.is_none());
+        assert!(logger.is_none());
     }
 
     #[test]
@@ -604,6 +658,8 @@ mod tests {
             tracer_provider: None,
             #[cfg(feature = "otel")]
             meter_provider: None,
+            #[cfg(feature = "otel")]
+            logger_provider: None,
         };
         drop(guard);
     }

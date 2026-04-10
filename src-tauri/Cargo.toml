@@ -18,16 +18,14 @@ name = "dna-assistant"
 default = ["otel"]
 otel = [
 	"dep:gethostname",
-	"dep:opentelemetry",
-	"dep:opentelemetry-semantic-conventions",
 	"dep:opentelemetry_sdk",
+	"dep:opentelemetry-appender-tracing",
 	"dep:opentelemetry-otlp",
+	"dep:opentelemetry-semantic-conventions",
+	"dep:opentelemetry",
 	"dep:tracing-opentelemetry",
 ]
-otel-logs = [
-	"otel",
-	"dep:opentelemetry-appender-tracing",
-]
+otel-logs = ["otel"]
 
 [dependencies]
 anyhow = { workspace = true }
