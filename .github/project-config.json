@@ -1,21 +1,21 @@
 {
-	"cli_toml": "crates/brust/Cargo.toml",
+	"cli_toml": "src-tauri/Cargo.toml",
 	"miri_excluded_crates": [],
 	"timeout_minutes": 15,
-	"apt_packages": "",
+	"apt_packages": "libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf",
 	"release_targets": [
-		{ "target": "x86_64-unknown-linux-gnu", "os": "ubuntu-latest" },
 		{ "target": "x86_64-pc-windows-msvc", "os": "windows-latest" }
 	],
 	"cross_check_targets": [
 		{
 			"target": "x86_64-unknown-linux-gnu",
 			"os": "ubuntu-latest",
-			"apt_packages": "gcc-aarch64-linux-gnu libc6-dev-arm64-cross"
+			"scope": "-p dna-detector"
 		},
 		{
 			"target": "x86_64-pc-windows-msvc",
-			"os": "windows-latest"
+			"os": "windows-latest",
+			"scope": "--all-targets"
 		}
 	]
 }
