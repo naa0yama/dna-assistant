@@ -61,8 +61,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 	musl-tools \
 	nano \
 	sudo \
-	wget \
-	# Tauri v2 Linux dependencies
+	wget
+
+# gh-sync:keep-start
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+	--mount=type=cache,target=/var/lib/apt,sharing=locked \
+	\
+	echo "**** Dependencies ****" && \
+	rm -f /etc/apt/apt.conf.d/docker-clean && \
+	echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+	echo "**** Dependencies ****" && \
+	set -euxo pipefail && \
+	apt-get -y install --no-install-recommends \
 	file \
 	libayatana-appindicator3-dev \
 	libgtk-3-dev \
@@ -72,6 +82,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 	libssl-dev \
 	libwebkit2gtk-4.1-dev \
 	patchelf
+# gh-sync:keep-end
 
 RUN echo "**** Create user ****" && \
 	set -euxo pipefail && \
