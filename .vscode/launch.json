@@ -7,15 +7,21 @@
 		{
 			"type": "lldb",
 			"request": "launch",
-			"name": "Debug executable 'brust'",
+			// gh-sync:keep-start
+			"name": "Debug executable 'dna-assistant'",
+			// gh-sync:keep-end
 			"cargo": {
 				"args": [
 					"build",
-					"--bin=brust",
-					"--package=brust"
+					// gh-sync:keep-start
+					"--bin=dna-assistant",
+					"--package=dna-assistant"
+					// gh-sync:keep-end
 				],
 				"filter": {
-					"name": "brust",
+					// gh-sync:keep-start
+					"name": "dna-assistant",
+					// gh-sync:keep-end
 					"kind": "bin"
 				}
 			},
@@ -25,16 +31,22 @@
 		{
 			"type": "lldb",
 			"request": "launch",
-			"name": "Debug unit tests in executable 'brust'",
+			// gh-sync:keep-start
+			"name": "Debug unit tests in executable 'dna-assistant'",
+			// gh-sync:keep-end
 			"cargo": {
 				"args": [
 					"test",
 					"--no-run",
-					"--bin=brust",
-					"--package=brust"
+					// gh-sync:keep-start
+					"--bin=dna-assistant",
+					"--package=dna-assistant"
+					// gh-sync:keep-end
 				],
 				"filter": {
-					"name": "brust",
+					// gh-sync:keep-start
+					"name": "dna-assistant",
+					// gh-sync:keep-end
 					"kind": "bin"
 				}
 			},

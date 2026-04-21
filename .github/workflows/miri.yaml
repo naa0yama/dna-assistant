@@ -2,8 +2,6 @@
 name: Miri (UB detection)
 
 on:
-  schedule:
-    - cron: "0 0 * * 0"
   workflow_call: {}
   workflow_dispatch:
 
@@ -27,19 +25,21 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-          sparse-checkout: crates
-          sparse-checkout-cone-mode: true
+          sparse-checkout: |
+            crates
+            .github/project-config.json
+          sparse-checkout-cone-mode: false
 
       - name: Build crate matrix
         id: detect
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require('fs');
 
-            // --- Exclusion list (FFI / subprocess — not Miri-compatible) ---
-            const excludedCrates = new Set([
-            ]);
+            // Load exclusion list from project-config.json (FFI / subprocess — not Miri-compatible)
+            const config = JSON.parse(fs.readFileSync('.github/project-config.json', 'utf8'));
+            const excludedCrates = new Set(config.miri_excluded_crates ?? []);
 
             // Dynamically scan crates/ directory
             const allCrates = fs.readdirSync('crates', { withFileTypes: true })

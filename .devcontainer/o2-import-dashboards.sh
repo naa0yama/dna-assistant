@@ -23,7 +23,7 @@ imported=0
 skipped=0
 
 # Fetch existing dashboard titles once to avoid N+1 API calls.
-existing_titles=$(curl -sf -u "$AUTH" "${BASE}/api/${ORG}/dashboards" 2>/dev/null \
+existing_titles=$(curl -sf --retry 3 --retry-delay 2 --retry-connrefused -u "$AUTH" "${BASE}/api/${ORG}/dashboards" 2>/dev/null \
   | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -50,7 +50,7 @@ for f in "$DASHBOARDS_DIR"/*.json; do
     continue
   fi
 
-  status=$(curl -sf -o /dev/null -w '%{http_code}' \
+  status=$(curl -sf --retry 3 --retry-delay 2 --retry-connrefused -o /dev/null -w '%{http_code}' \
     -u "$AUTH" \
     -H 'Content-Type: application/json' \
     -X POST "${BASE}/api/${ORG}/dashboards" \

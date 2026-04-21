@@ -56,7 +56,6 @@ All tasks use `mise run <task>`:
 | Tauri build (Windows only)    | `mise run tauri:build`        |
 | Clean (full)                  | `mise run clean`              |
 | Clean (sweep)                 | `mise run clean:sweep`        |
-| Clean (cache)                 | `mise run clean:cache`        |
 | Trace test (OTel)             | `mise run test:trace`         |
 | Badges (init)                 | `mise run badges:init`        |
 | Claude Code (install)         | `mise run claudecode:install` |

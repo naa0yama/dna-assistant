@@ -1,0 +1,21 @@
+{
+	"cli_toml": "crates/brust/Cargo.toml",
+	"miri_excluded_crates": [],
+	"timeout_minutes": 15,
+	"apt_packages": "",
+	"release_targets": [
+		{ "target": "x86_64-unknown-linux-gnu", "os": "ubuntu-latest" },
+		{ "target": "x86_64-pc-windows-msvc", "os": "windows-latest" }
+	],
+	"cross_check_targets": [
+		{
+			"target": "x86_64-unknown-linux-gnu",
+			"os": "ubuntu-latest",
+			"apt_packages": "gcc-aarch64-linux-gnu libc6-dev-arm64-cross"
+		},
+		{
+			"target": "x86_64-pc-windows-msvc",
+			"os": "windows-latest"
+		}
+	]
+}
