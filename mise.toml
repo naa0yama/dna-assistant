@@ -29,4 +29,4 @@ zizmor = "1.16.0"
 "cargo:tauri-cli" = "latest"
 # gh-sync:keep-end
 [task_config]
-includes = [".mise/overrides.toml", ".mise/tasks.toml"]
+includes = [".mise/tasks.toml", ".mise/overrides.toml"]
