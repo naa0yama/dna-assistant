@@ -41,6 +41,7 @@ impl std::fmt::Debug for HandlerContext {
 /// Receives WGC frame callbacks and stores frames into shared state.
 struct Handler {
     ctx: Arc<HandlerContext>,
+    scratch: Vec<u8>,
 }
 
 impl GraphicsCaptureApiHandler for Handler {
@@ -49,7 +50,10 @@ impl GraphicsCaptureApiHandler for Handler {
 
     fn new(ctx: Context<Self::Flags>) -> Result<Self> {
         debug!("WGC handler initialized");
-        Ok(Self { ctx: ctx.flags })
+        Ok(Self {
+            ctx: ctx.flags,
+            scratch: Vec::new(),
+        })
     }
 
     fn on_frame_arrived(
@@ -60,13 +64,10 @@ impl GraphicsCaptureApiHandler for Handler {
         let width = frame.width();
         let height = frame.height();
 
-        let mut buffer = frame
+        let buffer = frame
             .buffer()
             .context("failed to access WGC frame buffer")?;
-        let pixels = buffer
-            .as_nopadding_buffer()
-            .context("failed to read WGC frame pixels")?
-            .to_vec();
+        let pixels = buffer.as_nopadding_buffer(&mut self.scratch).to_vec();
 
         let image = RgbaImage::from_raw(width, height, pixels)
             .context("failed to construct RgbaImage from WGC frame")?;
