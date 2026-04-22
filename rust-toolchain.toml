@@ -1,7 +1,5 @@
 [toolchain]
-# gh-sync:keep-start
-channel = "1.94.1"
-# gh-sync:keep-end
+channel = "1.94.0"
 
 components = [
 	"cargo",
