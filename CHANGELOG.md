@@ -1,12 +1,18 @@
 # Changelog
 
 ## [v0.1.9](https://github.com/naa0yama/dna-assistant/compare/v0.1.8...v0.1.9) - 2026-04-22
+
 ### Documentation 🗒️
+
 - feat: OTel log exporter, version display, and notification refactor by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/60
+
 ### Dependency Updates 📦
+
 - chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/65
 - chore(deps): update rust crate rustls to v0.23.38 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/79
+
 ### Development Environment 🔧
+
 - chore(deps): update taiki-e/install-action action to v2.71.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/57
 - chore(deps): update docker/login-action action to v4.1.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/59
 - chore(deps): update taiki-e/install-action action to v2.71.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/61
