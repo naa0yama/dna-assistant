@@ -1,5 +1,32 @@
 # Changelog
 
+## [v0.1.9](https://github.com/naa0yama/dna-assistant/compare/v0.1.8...v0.1.9) - 2026-04-22
+### Documentation 🗒️
+- feat: OTel log exporter, version display, and notification refactor by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/60
+### Dependency Updates 📦
+- chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/65
+- chore(deps): update rust crate rustls to v0.23.38 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/79
+### Development Environment 🔧
+- chore(deps): update taiki-e/install-action action to v2.71.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/57
+- chore(deps): update docker/login-action action to v4.1.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/59
+- chore(deps): update taiki-e/install-action action to v2.71.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/61
+- chore(deps): update dependency aqua:ast-grep/ast-grep to v0.42.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/62
+- chore(deps): update taiki-e/install-action action to v2.72.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/63
+- chore(deps): update all action update by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/64
+- chore(deps): update dependency openobserve/openobserve to v0.70.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/66
+- chore(deps): update songmu/tagpr action to v1.18.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/67
+- chore(deps): update taiki-e/install-action action to v2.74.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/68
+- chore(deps): update taiki-e/install-action action to v2.74.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/69
+- chore(deps): update taiki-e/install-action action to v2.75.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/70
+- chore(deps): update taiki-e/install-action action to v2.75.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/71
+- chore(deps): update taiki-e/install-action action to v2.75.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/73
+- chore(deps): update taiki-e/install-action action to v2.75.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/74
+- chore(deps): update all action update by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/77
+- chore(deps): update dependency aqua:embarkstudios/cargo-deny to v0.19.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/78
+- chore: backport brust template infrastructure and CI updates by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/76
+- chore(deps): update taiki-e/install-action action to v2.75.13 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/81
+- chore(deps): update rust docker tag to v1.94.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/80
+
 ## [v0.1.8](https://github.com/naa0yama/dna-assistant/compare/v0.1.7...v0.1.8) - 2026-04-09
 
 ### Development Environment 🔧
