@@ -9,7 +9,7 @@ runs:
         persist-credentials: false
 
     - name: Install cargo-audit
-      uses: taiki-e/install-action@540824ccd8a9422d415db84e3c93445304896063 # v2.75.11
+      uses: taiki-e/install-action@eea29cff9a2b68892c0845ae3e4f45fc47ee9354 # v2.75.13
       with:
         tool: cargo-audit
 
