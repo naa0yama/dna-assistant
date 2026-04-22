@@ -1,6 +1,6 @@
 # Project-specific task overrides.
 # Tasks defined here take precedence over tasks.toml because this file
-# appears FIRST in the task_config.includes array in mise.toml.
+# appears LAST in the task_config.includes array in mise.toml.
 
 ["check:core"]
 description = "Compile check (cross-platform crates only, DevContainer OK)"
@@ -16,6 +16,10 @@ description = "Run tests (cross-platform crates only, DevContainer OK)"
 env = { OTEL_EXPORTER_OTLP_ENDPOINT = "" }
 run = "cargo test -p dna-detector --all-targets"
 
+# I/O-only and TUI functions in gh-sync are excluded via #[cfg_attr(coverage_nightly, coverage(off))].
+# cargo-llvm-cov automatically sets --cfg coverage_nightly when using a nightly toolchain,
+# which activates the #[coverage(off)] attribute on annotated functions.
+# No --ignore-filename-regex needed: exclusion is per-function, not per-file.
 [coverage]
 description = "Generate LCOV coverage report and verify thresholds"
 env = { OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:19999" }
