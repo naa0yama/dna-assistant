@@ -78,7 +78,7 @@ jobs:
           sccache: ${{ steps.versions.outputs.sccache }}
 
       - name: Install cargo-auditable
-        uses: taiki-e/install-action@b8be7f5e140177087325943c4a8e169d01c59b3d # v2.75.3
+        uses: taiki-e/install-action@eea29cff9a2b68892c0845ae3e4f45fc47ee9354 # v2.75.13
         with:
           tool: cargo-auditable@${{ steps.versions.outputs.auditable }}
 
@@ -104,7 +104,7 @@ jobs:
           fi
 
       - name: Upload binary artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         env:
           BINARY_NAME: ${{ steps.versions.outputs.binary_name }}
           TAG: ${{ inputs.tag }}

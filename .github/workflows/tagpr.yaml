@@ -40,7 +40,7 @@ jobs:
           persist-credentials: false
 
       - name: Cache dprint plugins
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/dprint
           key: dprint-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dprint.jsonc') }}
@@ -54,7 +54,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       - id: tagpr
-        uses: Songmu/tagpr@9d0f650553240dab1fa907eca27e3fd5b586e538 # v1.18.1
+        uses: Songmu/tagpr@84850af451fc53753c6685a3a6a2af7beef23607 # v1.18.2
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
