@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-action.json
+name: "Rust Security Audit"
+description: "Run cargo audit to check for vulnerable dependencies"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+
+    - name: Install cargo-audit
+      uses: taiki-e/install-action@540824ccd8a9422d415db84e3c93445304896063 # v2.75.11
+      with:
+        tool: cargo-audit
+
+    - name: Run audit
+      shell: bash
+      run: cargo audit

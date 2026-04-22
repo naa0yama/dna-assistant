@@ -1,29 +1,42 @@
 ---
 # Ref: https://github.com/actions/labeler/tree/main#pull-request-labeler
 
+# Rust source code and workspace
 core:
   - changed-files:
       - any-glob-to-any-file:
-          - "Dockerfile*"
+          - "crates/**/*.rs"
+          - "crates/**/Cargo.toml"
+          - "Cargo.toml"
+          - "Cargo.lock"
+          - "rust-toolchain.toml"
+          - ".clippy.toml"
+          - "ast-rules/**"
+          - "build.rs"
 
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "crates/**/tests/**"
+
+# GitHub Actions workflows and infra
 github-actions:
   - changed-files:
-      - any-glob-to-any-file: ".github/**"
+      - any-glob-to-any-file:
+          - ".github/workflows/**"
+          - ".github/actions/**"
+          - ".github/actionlint.yaml"
+          - ".github/infra/**"
+          - ".github/rulesets/**"
 
+# Documentation
 documentation:
   - changed-files:
       - any-glob-to-any-file:
           - "docs/**"
           - "README.md"
 
-tests:
-  - changed-files:
-      - any-glob-to-any-file: "tests/**"
-
-renovate:
-  - changed-files:
-      - any-glob-to-any-file: "renovate.json"
-
+# Dependency management
 renovate-config:
   - changed-files:
       - any-glob-to-any-file: "renovate.json"

@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.22.0@sha256:a72bffc78f7467a2d523cf7d2a0b69e81cf8bb955150de8c5c999de5a35b32a8
+# syntax=docker/dockerfile:1.23.0@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769
 #- -------------------------------------------------------------------------------------------------
 #- Global
 #-
@@ -9,17 +9,11 @@ ARG DEBIAN_FRONTEND=noninteractive \
 	USER_GID=${USER_GID:-${USER_UID}}
 
 ## renovate: datasource=github-releases packageName=rui314/mold versioning=semver automerge=true
-ARG MOLD_VERSION=v2.40.4
+ARG MOLD_VERSION=v2.41.0
 
 # Rust tools
-## renovate: datasource=github-tags packageName=matthiaskrgr/cargo-cache versioning=semver automerge=true
-ARG CACHE_VERSION=0.8.3
-## renovate: datasource=github-tags packageName=regexident/cargo-modules versioning=semver automerge=true
-ARG MODULES_VERSION=v0.25.0
 ## renovate: datasource=github-releases packageName=mozilla/sccache versioning=semver automerge=true
 ARG SCCACHE_VERSION=v0.14.0
-## renovate: datasource=github-releases packageName=holmgr/cargo-sweep versioning=semver automerge=true
-ARG SWEEP_VERSION=v0.8.0
 
 # retry dns and some http codes that might be transient errors
 ARG CURL_OPTS="-sfSL --retry 3 --retry-delay 2 --retry-connrefused"
@@ -28,14 +22,11 @@ ARG CURL_OPTS="-sfSL --retry 3 --retry-delay 2 --retry-connrefused"
 #- -------------------------------------------------------------------------------------------------
 #- Builder Base
 #-
-FROM rust:1.93.1-trixie@sha256:ecbe59a8408895edd02d9ef422504b8501dd9fa1526de27a45b73406d734d659 AS builder-base
-ARG CACHE_VERSION \
-	CURL_OPTS \
+FROM --platform=$BUILDPLATFORM rust:1.94.0-trixie@sha256:f17e723020f87c1b4ac4ff6d73c9dfbb7d5cb978754c76641e47337d65f61e12 AS builder-base
+ARG CURL_OPTS \
 	DEBIAN_FRONTEND \
-	MODULES_VERSION \
 	MOLD_VERSION \
 	SCCACHE_VERSION \
-	SWEEP_VERSION \
 	USER_NAME \
 	USER_UID \
 	USER_GID \
@@ -70,8 +61,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 	musl-tools \
 	nano \
 	sudo \
-	wget \
-	# Tauri v2 Linux dependencies
+	wget
+
+# gh-sync:keep-start
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+	--mount=type=cache,target=/var/lib/apt,sharing=locked \
+	\
+	echo "**** Dependencies ****" && \
+	rm -f /etc/apt/apt.conf.d/docker-clean && \
+	echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+	echo "**** Dependencies ****" && \
+	set -euxo pipefail && \
+	apt-get -y install --no-install-recommends \
 	file \
 	libayatana-appindicator3-dev \
 	libgtk-3-dev \
@@ -81,6 +82,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 	libssl-dev \
 	libwebkit2gtk-4.1-dev \
 	patchelf
+# gh-sync:keep-end
 
 RUN echo "**** Create user ****" && \
 	set -euxo pipefail && \
@@ -128,51 +130,11 @@ RUN --mount=type=bind,source=rust-toolchain.toml,target=/rust-toolchain.toml \
 	set -euxo pipefail && \
 	cargo -V
 
-# User level settings
-USER ${USER_NAME}
-ENV CARGO_HOME=/home/${USER_NAME}/.cargo
-
-RUN echo "**** Directory Create ****" && \
-	set -euxo pipefail && \
-	mkdir -p ~/.local ~/.config
-
-RUN echo "**** Create ${CARGO_HOME} ****" && \
-	set -euxo pipefail && \
-	mkdir -p "${CARGO_HOME}"
-
-RUN --mount=type=cache,target=/home/cuser/.cache/sccache,sharing=locked,uid=${USER_UID},gid=${USER_GID} \
-	--mount=type=cache,target=/home/cuser/.cargo/registry,sharing=locked,uid=${USER_UID},gid=${USER_GID} \
-	\
-	echo "**** Rust tools ****" && \
-	set -euxo pipefail && \
-	cargo install --locked \
-	cargo-cache@${CACHE_VERSION} \
-	cargo-modules@${MODULES_VERSION#v} \
-	cargo-sweep@${SWEEP_VERSION#v} \
-	&& \
-	cargo cache --version && \
-	cargo modules --version && \
-	cargo sweep --version
-
-RUN printf '%s\n' \
-	'case ":$PATH:" in' \
-	'  *:"$CARGO_HOME/bin":*) ;;' \
-	'  *) export PATH="$CARGO_HOME/bin:$PATH" ;;' \
-	'esac' >> ~/.bashrc
-
-RUN echo "**** Rust bash-completion ****" && \
-	set -euxo pipefail && \
-	mkdir -p                         /home/${USER_NAME}/.local/share/bash-completion/completions && \
-	rustup completions bash cargo  > /home/${USER_NAME}/.local/share/bash-completion/completions/cargo && \
-	rustup completions bash rustup > /home/${USER_NAME}/.local/share/bash-completion/completions/rustup
-
-USER root
-
 
 #- -------------------------------------------------------------------------------------------------
 #- Development
 #-
-FROM builder-base AS development
+FROM --platform=$BUILDPLATFORM builder-base AS development
 ARG CURL_OPTS \
 	DEBIAN_FRONTEND \
 	USER_NAME
@@ -187,22 +149,34 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # User level settings
 USER ${USER_NAME}
-RUN echo "**** Install mise ****" && \
-	set -euxo pipefail && \
-	curl https://mise.jdx.dev/install.sh | sh && \
-	~/.local/bin/mise --version
+ENV CARGO_HOME=/home/${USER_NAME}/.cargo
 
-COPY --chown=${USER_NAME}:${USER_NAME} mise.toml /tmp/mise.toml
-RUN --mount=type=secret,id=MISE_GITHUB_TOKEN,mode=0444 \
-	\
-	echo "**** Install tools via mise ****" && \
+RUN echo "**** Directory Create ****" && \
 	set -euxo pipefail && \
-	{ set +x; if [ -f /run/secrets/MISE_GITHUB_TOKEN ] && [ -s /run/secrets/MISE_GITHUB_TOKEN ]; then export MISE_GITHUB_TOKEN=$(cat /run/secrets/MISE_GITHUB_TOKEN); echo "MISE_GITHUB_TOKEN loaded from secret"; fi; set -x; } && \
-	cd /tmp && \
-	~/.local/bin/mise trust -y /tmp/mise.toml && \
-	~/.local/bin/mise install -y && \
-	~/.local/bin/mise trust -y --untrust /tmp/mise.toml && \
-	rm /tmp/mise.toml
+	mkdir -p \
+	~/.config \
+	~/.config/mise \
+	~/.local \
+	~/.local/bin \
+	~/.local/share \
+	~/.local/share/claude \
+	~/.local/share/mise
+
+RUN echo "**** Create ${CARGO_HOME} ****" && \
+	set -euxo pipefail && \
+	mkdir -p "${CARGO_HOME}"
+
+RUN printf '%s\n' \
+	'case ":$PATH:" in' \
+	'  *:"$CARGO_HOME/bin":*) ;;' \
+	'  *) export PATH="$CARGO_HOME/bin:$PATH" ;;' \
+	'esac' >> ~/.bashrc
+
+RUN echo "**** Rust bash-completion ****" && \
+	set -euxo pipefail && \
+	mkdir -p                         /home/${USER_NAME}/.local/share/bash-completion/completions && \
+	rustup completions bash cargo  > /home/${USER_NAME}/.local/share/bash-completion/completions/cargo && \
+	rustup completions bash rustup > /home/${USER_NAME}/.local/share/bash-completion/completions/rustup
 
 RUN <<EOF
 echo "**** add '~/.bashrc mise and claude code ****"
@@ -228,4 +202,3 @@ alias cc="claude --dangerously-skip-permissions"
 
 _DOC_
 EOF
-
