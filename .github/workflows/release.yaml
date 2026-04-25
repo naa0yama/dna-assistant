@@ -77,7 +77,6 @@ jobs:
         shell: bash
         run: |
           sccache_version=$(grep -E '^ARG SCCACHE_VERSION=v?[0-9]+\.[0-9]+\.[0-9]+' Dockerfile | sed -E 's/ARG SCCACHE_VERSION=(v?[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          auditable_version=$(grep -E 'cargo-auditable' mise.toml | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
           tauri_cli_version=$(grep -E 'cargo:tauri-cli' mise.toml | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
 
           # Find the CLI crate that defines the [[bin]] target
@@ -94,7 +93,6 @@ jobs:
 
           {
             echo "sccache=${sccache_version}"
-            echo "auditable=${auditable_version}"
             echo "tauri_cli=${tauri_cli_version}"
             echo "binary_name=${binary_name}"
           } >> "$GITHUB_OUTPUT"
@@ -103,11 +101,6 @@ jobs:
         uses: ./.github/actions/act-setup-rust
         with:
           sccache: ${{ steps.versions.outputs.sccache }}
-
-      - name: Install cargo-auditable
-        uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2.75.17
-        with:
-          tool: cargo-auditable@${{ steps.versions.outputs.auditable }}
 
       - name: Install tauri-cli
         env:
@@ -121,7 +114,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cargo tauri build --runner cargo-auditable --target "${TARGET}" --verbose
+          cargo tauri build --target "${TARGET}" --verbose
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
