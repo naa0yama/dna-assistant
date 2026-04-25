@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.1.11](https://github.com/naa0yama/dna-assistant/compare/v0.1.10...v0.1.11) - 2026-04-25
+### Bug Fixes 🐌
+- fix(release): drop --runner cargo-auditable from tauri build by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/101
+
 ## [v0.1.10](https://github.com/naa0yama/dna-assistant/compare/v0.1.9...v0.1.10) - 2026-04-25
 
 ### Bug Fixes 🐌
