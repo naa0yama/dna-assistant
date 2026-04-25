@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.1.10](https://github.com/naa0yama/dna-assistant/compare/v0.1.9...v0.1.10) - 2026-04-25
+
+### Bug Fixes 🐌
+
+- fix: sync UI version to v0.1.9 and add NSIS installer for Windows Toast notifications by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/99
+
 ## [v0.1.9](https://github.com/naa0yama/dna-assistant/compare/v0.1.8...v0.1.9) - 2026-04-24
 
 ### Documentation 🗒️
