@@ -78,6 +78,7 @@ jobs:
         run: |
           sccache_version=$(grep -E '^ARG SCCACHE_VERSION=v?[0-9]+\.[0-9]+\.[0-9]+' Dockerfile | sed -E 's/ARG SCCACHE_VERSION=(v?[0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           auditable_version=$(grep -E 'cargo-auditable' mise.toml | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
+          tauri_cli_version=$(grep -E 'cargo:tauri-cli' mise.toml | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
 
           # Find the CLI crate that defines the [[bin]] target
           if grep -q '^\[\[bin\]\]' "$cli_toml"; then
@@ -94,6 +95,7 @@ jobs:
           {
             echo "sccache=${sccache_version}"
             echo "auditable=${auditable_version}"
+            echo "tauri_cli=${tauri_cli_version}"
             echo "binary_name=${binary_name}"
           } >> "$GITHUB_OUTPUT"
 
@@ -107,48 +109,38 @@ jobs:
         with:
           tool: cargo-auditable@${{ steps.versions.outputs.auditable }}
 
-      - name: Build release binary
+      - name: Install tauri-cli
+        env:
+          TAURI_CLI_VERSION: ${{ steps.versions.outputs.tauri_cli }}
+        shell: bash
+        run: cargo install tauri-cli --version "${TAURI_CLI_VERSION}" --locked
+
+      - name: Build NSIS installer
         env:
           TARGET: ${{ matrix.target }}
-          BINARY_NAME: ${{ steps.versions.outputs.binary_name }}
         shell: bash
         run: |
           set -euxo pipefail
-          cargo auditable build --release --target "${TARGET}" --bin "${BINARY_NAME}" --verbose
+          cargo tauri build --runner cargo-auditable --target "${TARGET}" --verbose
 
-      - name: Set binary extension
-        id: binary-ext
-        env:
-          TARGET: ${{ matrix.target }}
-        shell: bash
-        run: |
-          if [[ "${TARGET}" == *windows* ]]; then
-            echo "ext=.exe" >> "$GITHUB_OUTPUT"
-          else
-            echo "ext=" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Upload binary artifacts
+      - name: Upload installer artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         env:
           BINARY_NAME: ${{ steps.versions.outputs.binary_name }}
           TAG: ${{ inputs.tag || github.ref_name }}
           TARGET: ${{ matrix.target }}
-          BINARY_EXT: ${{ steps.binary-ext.outputs.ext }}
         with:
           name: ${{ env.BINARY_NAME }}-${{ env.TAG }}-${{ env.TARGET }}
-          path: target/${{ env.TARGET }}/release/${{ env.BINARY_NAME }}${{ env.BINARY_EXT }}
+          path: target/${{ env.TARGET }}/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 7
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         env:
-          BINARY_NAME: ${{ steps.versions.outputs.binary_name }}
           TARGET: ${{ matrix.target }}
-          BINARY_EXT: ${{ steps.binary-ext.outputs.ext }}
         with:
-          subject-path: target/${{ env.TARGET }}/release/${{ env.BINARY_NAME }}${{ env.BINARY_EXT }}
+          subject-path: target/${{ env.TARGET }}/release/bundle/nsis/*.exe
 
       - name: Collect artifact info
         id: collect-artifacts
@@ -156,12 +148,11 @@ jobs:
           BINARY_NAME: ${{ steps.versions.outputs.binary_name }}
           TAG: ${{ inputs.tag || github.ref_name }}
           TARGET: ${{ matrix.target }}
-          BINARY_EXT: ${{ steps.binary-ext.outputs.ext }}
         shell: bash
         run: |
           artifact_name="${BINARY_NAME}-${TAG}-${TARGET}"
-          binary_path="target/${TARGET}/release/${BINARY_NAME}${BINARY_EXT}"
-          echo "artifacts=${artifact_name}:${binary_path}" >> "$GITHUB_OUTPUT"
+          installer_path=$(find "target/${TARGET}/release/bundle/nsis/" -name "*.exe" -type f | head -n 1)
+          echo "artifacts=${artifact_name}:${installer_path}" >> "$GITHUB_OUTPUT"
 
   release:
     name: Upload Release Assets
