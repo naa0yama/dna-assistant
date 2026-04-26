@@ -806,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "dna-assistant"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -836,7 +836,7 @@ dependencies = [
 
 [[package]]
 name = "dna-capture"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "dna-detector",
@@ -850,7 +850,7 @@ dependencies = [
 
 [[package]]
 name = "dna-detector"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "image",
  "serde",
