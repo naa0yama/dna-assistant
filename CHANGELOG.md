@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.1.12](https://github.com/naa0yama/dna-assistant/compare/v0.1.11...v0.1.12) - 2026-04-26
+### Dependency Updates 📦
+- chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/105
+### Development Environment 🔧
+- chore(deps): update taiki-e/install-action action to v2.75.18 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/103
+
 ## [v0.1.11](https://github.com/naa0yama/dna-assistant/compare/v0.1.10...v0.1.11) - 2026-04-25
 
 ### Bug Fixes 🐌
