@@ -4,3 +4,8 @@
 
 # o2
 .mcp.json
+
+# gh-sync:keep-start
+# Project-specific dependencies are listed here.
+
+# gh-sync:keep-end
