@@ -49,6 +49,10 @@ impl EnvFilterHandle {
 #[must_use]
 #[allow(clippy::struct_field_names)]
 pub struct TelemetryGuard {
+    // process_metrics is dropped first (before meter_provider shuts down)
+    // by explicit take() at the start of Drop::drop().
+    #[cfg(feature = "otel")]
+    process_metrics: Option<ProcessMetricHandles>,
     #[cfg(feature = "otel")]
     tracer_provider: Option<opentelemetry_sdk::trace::SdkTracerProvider>,
     #[cfg(feature = "otel")]
@@ -75,6 +79,9 @@ impl Drop for TelemetryGuard {
         // via OTel logs while the logger provider is still live.
         #[cfg(feature = "otel")]
         {
+            // Drop process metric handles before meter shutdown so observable
+            // callbacks stop firing before the meter provider is destroyed.
+            self.process_metrics.take();
             if let Some(provider) = self.tracer_provider.take()
                 && let Err(e) = provider.shutdown()
             {
@@ -134,8 +141,14 @@ pub fn init(overrides: &TelemetryOverrides<'_>) -> (TelemetryGuard, EnvFilterHan
 
     #[cfg(feature = "otel")]
     {
-        let (otel_layer, tracer_provider, meter_provider, log_bridge, logger_provider) =
-            init_otel(overrides.otel_endpoint, overrides.otel_headers);
+        let (
+            otel_layer,
+            tracer_provider,
+            meter_provider,
+            log_bridge,
+            logger_provider,
+            process_metrics,
+        ) = init_otel(overrides.otel_endpoint, overrides.otel_headers);
 
         // Layer order (innermost first): otel_layer → log_bridge → filter_layer → fmt_layer.
         // log_bridge is placed after otel_layer so trace context (TraceId/SpanId) is
@@ -149,6 +162,7 @@ pub fn init(overrides: &TelemetryOverrides<'_>) -> (TelemetryGuard, EnvFilterHan
 
         (
             TelemetryGuard {
+                process_metrics,
                 tracer_provider,
                 meter_provider,
                 logger_provider,
@@ -227,6 +241,7 @@ fn init_otel(
         >,
     >,
     Option<opentelemetry_sdk::logs::SdkLoggerProvider>,
+    Option<ProcessMetricHandles>,
 ) {
     use opentelemetry::KeyValue;
     use opentelemetry::metrics::MeterProvider as _;
@@ -238,6 +253,7 @@ fn init_otel(
     use opentelemetry_sdk::logs::SdkLoggerProvider;
     use opentelemetry_sdk::metrics::SdkMeterProvider;
     use opentelemetry_sdk::trace::SdkTracerProvider;
+    use opentelemetry_semantic_conventions::attribute as semconv_attr;
     use tracing_opentelemetry::OpenTelemetryLayer;
 
     // Resolve endpoint: explicit override > env var > disabled.
@@ -250,7 +266,7 @@ fn init_otel(
     };
 
     let Some(endpoint) = endpoint else {
-        return (None, None, None, None, None);
+        return (None, None, None, None, None, None);
     };
 
     let base = normalize_otlp_base(&endpoint);
@@ -262,12 +278,12 @@ fn init_otel(
     let resource = Resource::builder()
         .with_service_name(env!("CARGO_PKG_NAME"))
         .with_attributes([
-            KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+            KeyValue::new(semconv_attr::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
             KeyValue::new(
-                "service.instance.id",
+                semconv_attr::SERVICE_INSTANCE_ID,
                 gethostname::gethostname().to_string_lossy().into_owned(),
             ),
-            KeyValue::new("vcs.repository.ref.revision", env!("GIT_HASH")),
+            KeyValue::new(semconv_attr::VCS_REF_HEAD_REVISION, env!("GIT_HASH")),
         ])
         .build();
 
@@ -282,7 +298,7 @@ fn init_otel(
         Ok(e) => e,
         Err(e) => {
             tracing::warn!("Failed to create OTLP span exporter, running without OTel: {e}");
-            return (None, None, None, None, None);
+            return (None, None, None, None, None, None);
         }
     };
 
@@ -304,7 +320,7 @@ fn init_otel(
         Ok(e) => e,
         Err(e) => {
             tracing::warn!("Failed to create OTLP metric exporter, metrics disabled: {e}");
-            return (Some(layer), Some(tracer_provider), None, None, None);
+            return (Some(layer), Some(tracer_provider), None, None, None, None);
         }
     };
 
@@ -315,9 +331,9 @@ fn init_otel(
 
     opentelemetry::global::set_meter_provider(meter_provider.clone());
 
-    // Register process-level metrics as Observable Gauges.
+    // Register process-level observable metrics.
     let meter = meter_provider.meter(env!("CARGO_PKG_NAME"));
-    register_process_metrics(&meter);
+    let process_metrics = ProcessMetricHandles::register(&meter);
 
     // --- Logger ---
     let logs_endpoint = format!("{base}/v1/logs");
@@ -349,6 +365,7 @@ fn init_otel(
         Some(meter_provider),
         log_bridge,
         logger_provider,
+        Some(process_metrics),
     )
 }
 
@@ -376,175 +393,251 @@ fn parse_otlp_headers(raw: &str) -> std::collections::HashMap<String, String> {
         .collect()
 }
 
-/// Register `process.*` observable gauges using `sysinfo`.
+/// Holds observable metric instrument handles for process-level metrics.
 ///
-/// Each callback refreshes only the current process — no full-system scan.
-/// All callbacks are panic-free: errors silently skip the observation.
+/// Dropping this struct deregisters all observable callbacks. Keep alive for
+/// the program lifetime — stored in `TelemetryGuard`.
 #[cfg(feature = "otel")]
-fn register_process_metrics(meter: &opentelemetry::metrics::Meter) {
-    use std::sync::{Arc, Mutex};
-    use sysinfo::{Pid, ProcessRefreshKind, System};
-
-    let pid = Pid::from_u32(std::process::id());
-    let sys = Arc::new(Mutex::new(System::new()));
-    // f64::from(u32) is a lossless widening conversion; safe for CPU count values.
-    let cpu_count = f64::from(
-        u32::try_from(std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get))
-            .unwrap_or(1_u32),
-    );
-
-    register_memory_gauges(
-        meter,
-        &sys,
-        pid,
-        ProcessRefreshKind::nothing().with_memory(),
-    );
-    register_cpu_uptime_gauges(
-        meter,
-        Arc::clone(&sys),
-        pid,
-        ProcessRefreshKind::nothing().with_cpu(),
-        cpu_count,
-    );
-
-    // Thread count is Linux-only (requires /proc/<pid>/task).
+struct ProcessMetricHandles {
+    _mem_usage: opentelemetry::metrics::ObservableUpDownCounter<i64>,
+    _mem_virtual: opentelemetry::metrics::ObservableUpDownCounter<i64>,
+    _cpu_utilization: opentelemetry::metrics::ObservableGauge<f64>,
+    _cpu_time: opentelemetry::metrics::ObservableCounter<f64>,
+    _uptime: opentelemetry::metrics::ObservableGauge<f64>,
+    _disk_io: opentelemetry::metrics::ObservableCounter<u64>,
     #[cfg(target_os = "linux")]
-    register_thread_gauge(
-        meter,
-        sys,
-        pid,
-        ProcessRefreshKind::nothing().with_memory().with_cpu(),
-    );
+    _thread_count: opentelemetry::metrics::ObservableUpDownCounter<i64>,
+    _open_fds: opentelemetry::metrics::ObservableUpDownCounter<i64>,
 }
 
 #[cfg(feature = "otel")]
-fn register_memory_gauges(
-    meter: &opentelemetry::metrics::Meter,
-    sys: &std::sync::Arc<std::sync::Mutex<sysinfo::System>>,
-    pid: sysinfo::Pid,
-    kind: sysinfo::ProcessRefreshKind,
-) {
-    use sysinfo::ProcessesToUpdate;
+impl ProcessMetricHandles {
+    /// Each callback refreshes only the current process — no full-system scan.
+    /// All callbacks are panic-free: errors silently skip the observation.
+    #[allow(clippy::too_many_lines)]
+    fn register(meter: &opentelemetry::metrics::Meter) -> Self {
+        use opentelemetry::KeyValue;
+        use opentelemetry_semantic_conventions::{
+            attribute as semconv_attr, metric as semconv_metric,
+        };
+        use std::sync::{Arc, Mutex};
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
-    // --- process.memory.usage (RSS) ---
-    {
-        let sys = std::sync::Arc::clone(sys);
-        meter
-            .i64_observable_gauge("process.memory.usage")
-            .with_unit("By")
-            .with_description("Resident Set Size in bytes")
-            .with_callback(move |obs| {
-                if let Ok(mut s) = sys.lock() {
-                    s.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), false, kind);
-                    if let Some(p) = s.process(pid) {
-                        obs.observe(i64::try_from(p.memory()).unwrap_or(i64::MAX), &[]);
+        // Refresh the target process and call f with its snapshot.
+        // Uses try_lock() so a busy collection thread is skipped rather than blocked.
+        // Defined first to satisfy clippy::items-after-statements.
+        fn with_process<F, T>(
+            sys: &Arc<Mutex<System>>,
+            pid: Pid,
+            kind: ProcessRefreshKind,
+            f: F,
+        ) -> Option<T>
+        where
+            F: FnOnce(&sysinfo::Process) -> T,
+        {
+            let mut s = sys.try_lock().ok()?;
+            s.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), false, kind);
+            s.process(pid).map(f)
+        }
+
+        let pid = Pid::from_u32(std::process::id());
+        let sys = Arc::new(Mutex::new(System::new()));
+        // f64::from(u32) is a lossless widening conversion; safe for CPU count values.
+        let cpu_count = f64::from(
+            u32::try_from(
+                std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
+            )
+            .unwrap_or(1_u32),
+        );
+
+        // --- process.memory.usage (RSS) ---
+        let mem_usage = {
+            let sys = Arc::clone(&sys);
+            meter
+                .i64_observable_up_down_counter(semconv_metric::PROCESS_MEMORY_USAGE)
+                .with_unit("By")
+                .with_description("Resident Set Size in bytes")
+                .with_callback(move |obs| {
+                    if let Some(v) = with_process(
+                        &sys,
+                        pid,
+                        ProcessRefreshKind::nothing().with_memory(),
+                        |p| i64::try_from(p.memory()).unwrap_or(i64::MAX),
+                    ) {
+                        obs.observe(v, &[]);
                     }
-                }
-            })
-            .build();
-    }
+                })
+                .build()
+        };
 
-    // --- process.memory.virtual ---
-    {
-        let sys = std::sync::Arc::clone(sys);
-        meter
-            .i64_observable_gauge("process.memory.virtual")
-            .with_unit("By")
-            .with_description("Virtual memory size in bytes")
-            .with_callback(move |obs| {
-                if let Ok(mut s) = sys.lock() {
-                    s.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), false, kind);
-                    if let Some(p) = s.process(pid) {
-                        obs.observe(i64::try_from(p.virtual_memory()).unwrap_or(i64::MAX), &[]);
+        // --- process.memory.virtual ---
+        let mem_virtual = {
+            let sys = Arc::clone(&sys);
+            meter
+                .i64_observable_up_down_counter(semconv_metric::PROCESS_MEMORY_VIRTUAL)
+                .with_unit("By")
+                .with_description("Virtual memory size in bytes")
+                .with_callback(move |obs| {
+                    if let Some(v) = with_process(
+                        &sys,
+                        pid,
+                        ProcessRefreshKind::nothing().with_memory(),
+                        |p| i64::try_from(p.virtual_memory()).unwrap_or(i64::MAX),
+                    ) {
+                        obs.observe(v, &[]);
                     }
-                }
-            })
-            .build();
-    }
-}
+                })
+                .build()
+        };
 
-#[cfg(feature = "otel")]
-fn register_cpu_uptime_gauges(
-    meter: &opentelemetry::metrics::Meter,
-    sys: std::sync::Arc<std::sync::Mutex<sysinfo::System>>,
-    pid: sysinfo::Pid,
-    kind_cpu: sysinfo::ProcessRefreshKind,
-    cpu_count: f64,
-) {
-    use sysinfo::ProcessesToUpdate;
-
-    // --- process.cpu.utilization (0.0 - 1.0) ---
-    // First observation will be 0.0 because sysinfo needs two refreshes for a delta.
-    {
-        let sys = std::sync::Arc::clone(&sys);
-        meter
-            .f64_observable_gauge("process.cpu.utilization")
-            .with_unit("1")
-            .with_description("CPU utilization as a fraction of all logical CPUs")
-            .with_callback(move |obs| {
-                if let Ok(mut s) = sys.lock() {
-                    s.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), false, kind_cpu);
-                    if let Some(p) = s.process(pid) {
-                        // sysinfo returns % across all CPUs; normalize to [0, 1].
-                        obs.observe(f64::from(p.cpu_usage()) / 100.0 / cpu_count, &[]);
+        // --- process.cpu.utilization (0.0 - 1.0) ---
+        // First observation will be 0.0 because sysinfo needs two refreshes for a delta.
+        let cpu_utilization = {
+            let sys = Arc::clone(&sys);
+            meter
+                .f64_observable_gauge(semconv_metric::PROCESS_CPU_UTILIZATION)
+                .with_unit("1")
+                .with_description("CPU utilization as a fraction of all logical CPUs")
+                .with_callback(move |obs| {
+                    if let Some(v) =
+                        with_process(&sys, pid, ProcessRefreshKind::nothing().with_cpu(), |p| {
+                            f64::from(p.cpu_usage()) / 100.0 / cpu_count
+                        })
+                    {
+                        obs.observe(v, &[]);
                     }
-                }
-            })
-            .build();
-    }
+                })
+                .build()
+        };
 
-    // --- process.uptime (seconds since process start) ---
-    // run_time() is derived from start_time() on any refresh; no specific kind needed.
-    {
-        meter
-            .f64_observable_gauge("process.uptime")
-            .with_unit("s")
-            .with_description("Seconds elapsed since the process started")
-            .with_callback(move |obs| {
-                if let Ok(mut s) = sys.lock() {
-                    s.refresh_processes_specifics(
-                        ProcessesToUpdate::Some(&[pid]),
-                        false,
-                        sysinfo::ProcessRefreshKind::nothing(),
-                    );
-                    if let Some(p) = s.process(pid) {
-                        // run_time() is seconds since start; fits comfortably in f64.
+        // --- process.cpu.time (accumulated CPU seconds) ---
+        // accumulated_cpu_time() returns u64 (CPU-ms); capped at u32::MAX ms (~49 days).
+        let cpu_time = {
+            let sys = Arc::clone(&sys);
+            meter
+                .f64_observable_counter(semconv_metric::PROCESS_CPU_TIME)
+                .with_unit("s")
+                .with_description("Accumulated CPU time in seconds (user + system combined)")
+                .with_callback(move |obs| {
+                    if let Some(ms) = with_process(
+                        &sys,
+                        pid,
+                        ProcessRefreshKind::nothing().with_cpu(),
+                        sysinfo::Process::accumulated_cpu_time,
+                    ) {
                         obs.observe(
-                            f64::from(u32::try_from(p.run_time()).unwrap_or(u32::MAX)),
+                            f64::from(u32::try_from(ms).unwrap_or(u32::MAX)) / 1000.0,
                             &[],
                         );
                     }
-                }
-            })
-            .build();
+                })
+                .build()
+        };
+
+        // --- process.uptime (seconds since process start) ---
+        // run_time() is derived from start_time() on any refresh; no specific kind needed.
+        let uptime = {
+            let sys = Arc::clone(&sys);
+            meter
+                .f64_observable_gauge(semconv_metric::PROCESS_UPTIME)
+                .with_unit("s")
+                .with_description("Seconds elapsed since the process started")
+                .with_callback(move |obs| {
+                    if let Some(v) = with_process(&sys, pid, ProcessRefreshKind::nothing(), |p| {
+                        f64::from(u32::try_from(p.run_time()).unwrap_or(u32::MAX))
+                    }) {
+                        obs.observe(v, &[]);
+                    }
+                })
+                .build()
+        };
+
+        // --- process.disk.io (read and write bytes, split by direction) ---
+        let disk_io = {
+            let sys = Arc::clone(&sys);
+            meter
+                .u64_observable_counter(semconv_metric::PROCESS_DISK_IO)
+                .with_unit("By")
+                .with_description("Total bytes of disk I/O, split by direction")
+                .with_callback(move |obs| {
+                    if let Some(usage) = with_process(
+                        &sys,
+                        pid,
+                        ProcessRefreshKind::nothing().with_disk_usage(),
+                        sysinfo::Process::disk_usage,
+                    ) {
+                        obs.observe(
+                            usage.total_read_bytes,
+                            &[KeyValue::new(semconv_attr::DISK_IO_DIRECTION, "read")],
+                        );
+                        obs.observe(
+                            usage.total_written_bytes,
+                            &[KeyValue::new(semconv_attr::DISK_IO_DIRECTION, "write")],
+                        );
+                    }
+                })
+                .build()
+        };
+
+        // --- process.thread.count (Linux only, via /proc/<pid>/task) ---
+        #[cfg(target_os = "linux")]
+        let thread_count = {
+            let sys = Arc::clone(&sys);
+            meter
+                .i64_observable_up_down_counter(semconv_metric::PROCESS_THREAD_COUNT)
+                .with_unit("{thread}")
+                .with_description("Number of threads in the process")
+                .with_callback(move |obs| {
+                    if let Some(count) = with_process(
+                        &sys,
+                        pid,
+                        ProcessRefreshKind::nothing().with_memory().with_cpu(),
+                        |p| {
+                            p.tasks()
+                                .map(|t| i64::try_from(t.len()).unwrap_or(i64::MAX))
+                        },
+                    )
+                    .flatten()
+                    {
+                        obs.observe(count, &[]);
+                    }
+                })
+                .build()
+        };
+
+        // --- process.open_file_descriptor.count ---
+        // open_files() reads /proc/<pid>/fd directly; no ProcessRefreshKind needed.
+        let open_fds = {
+            let sys = Arc::clone(&sys);
+            meter
+                .i64_observable_up_down_counter(semconv_metric::PROCESS_OPEN_FILE_DESCRIPTOR_COUNT)
+                .with_unit("{count}")
+                .with_description("Number of open file descriptors")
+                .with_callback(move |obs| {
+                    if let Some(count) =
+                        with_process(&sys, pid, ProcessRefreshKind::nothing(), |p| {
+                            p.open_files().and_then(|n| i64::try_from(n).ok())
+                        })
+                        .flatten()
+                    {
+                        obs.observe(count, &[]);
+                    }
+                })
+                .build()
+        };
+
+        Self {
+            _mem_usage: mem_usage,
+            _mem_virtual: mem_virtual,
+            _cpu_utilization: cpu_utilization,
+            _cpu_time: cpu_time,
+            _uptime: uptime,
+            _disk_io: disk_io,
+            #[cfg(target_os = "linux")]
+            _thread_count: thread_count,
+            _open_fds: open_fds,
+        }
     }
-}
-
-/// Register `process.thread.count` via Linux `/proc/<pid>/task`.
-#[cfg(all(feature = "otel", target_os = "linux"))]
-fn register_thread_gauge(
-    meter: &opentelemetry::metrics::Meter,
-    sys: std::sync::Arc<std::sync::Mutex<sysinfo::System>>,
-    pid: sysinfo::Pid,
-    kind: sysinfo::ProcessRefreshKind,
-) {
-    use sysinfo::ProcessesToUpdate;
-
-    meter
-        .i64_observable_gauge("process.thread.count")
-        .with_unit("{thread}")
-        .with_description("Number of threads in the process")
-        .with_callback(move |obs| {
-            if let Ok(mut s) = sys.lock() {
-                s.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), false, kind);
-                if let Some(p) = s.process(pid)
-                    && let Some(tasks) = p.tasks()
-                {
-                    obs.observe(i64::try_from(tasks.len()).unwrap_or(i64::MAX), &[]);
-                }
-            }
-        })
-        .build();
 }
 
 #[cfg(test)]
@@ -611,12 +704,13 @@ mod tests {
         if std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some() {
             return;
         }
-        let (layer, tracer, meter, log_bridge, logger) = super::init_otel("", "");
+        let (layer, tracer, meter, log_bridge, logger, process_metrics) = super::init_otel("", "");
         assert!(layer.is_none());
         assert!(tracer.is_none());
         assert!(meter.is_none());
         assert!(log_bridge.is_none());
         assert!(logger.is_none());
+        assert!(process_metrics.is_none());
     }
 
     #[test]
@@ -655,6 +749,8 @@ mod tests {
         // Guard with no providers should drop without panic.
         let guard = super::TelemetryGuard {
             #[cfg(feature = "otel")]
+            process_metrics: None,
+            #[cfg(feature = "otel")]
             tracer_provider: None,
             #[cfg(feature = "otel")]
             meter_provider: None,
@@ -666,14 +762,25 @@ mod tests {
 
     #[test]
     #[cfg(feature = "otel")]
-    fn register_process_metrics_does_not_panic() {
-        // Verify that process metrics registration runs without panic
-        // even when no OTLP endpoint is configured.
+    fn process_metric_handles_register_does_not_panic() {
+        // Verify that ProcessMetricHandles::register runs without panic
+        // and that the handles drop cleanly after provider shutdown.
         use opentelemetry::metrics::MeterProvider as _;
         let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder().build();
         let meter = provider.meter("test");
-        super::register_process_metrics(&meter);
-        // Allow the provider to flush/shutdown cleanly
+        let _handles = super::ProcessMetricHandles::register(&meter);
+        let _ = provider.shutdown();
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn process_metric_handles_drop_is_safe() {
+        // Handles dropped before provider shutdown should not panic.
+        use opentelemetry::metrics::MeterProvider as _;
+        let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder().build();
+        let meter = provider.meter("test");
+        let _handles = super::ProcessMetricHandles::register(&meter);
+        // handles drop here, before provider.shutdown()
         let _ = provider.shutdown();
     }
 }
