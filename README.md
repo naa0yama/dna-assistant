@@ -95,6 +95,18 @@ mise run clippy:core        # Lint (dna-detector のみ)
 mise run miri:core          # Miri (dna-detector のみ)
 ```
 
+### DevContainer ルーティング (Traefik / WSL2)
+
+ワークツリーごとの DevContainer を Traefik 経由でルーティングします。
+
+```bash
+mise run traefik:setup      # Traefik を systemd ユーザーサービスとしてセットアップ (初回のみ)
+mise run dev:up             # 現在のワークツリー用 DevContainer を起動
+mise run dev:down           # 現在のワークツリー用 DevContainer を停止・削除
+mise run dev:exec           # 起動中の DevContainer に exec 接続
+mise run dev:status         # 起動中の DevContainer と Traefik FQDN を一覧表示
+```
+
 ## プロジェクト構造
 
 ```
