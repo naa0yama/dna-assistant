@@ -63,7 +63,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 	sudo \
 	wget
 
-# gh-sync:keep-start
+# graft:keep-start
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 	--mount=type=cache,target=/var/lib/apt,sharing=locked \
 	\
@@ -82,7 +82,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 	libssl-dev \
 	libwebkit2gtk-4.1-dev \
 	patchelf
-# gh-sync:keep-end
+# graft:keep-end
 
 RUN echo "**** Create user ****" && \
 	set -euxo pipefail && \
@@ -94,6 +94,12 @@ RUN echo "**** Create user ****" && \
 RUN echo "**** Add sudo user ****" && \
 	set -euxo pipefail && \
 	echo -e "${USER_NAME}\tALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USER_NAME}"
+
+RUN echo "**** Create XDG runtime dir ****" && \
+	set -euxo pipefail && \
+	mkdir -p /run/user/${USER_UID}/gnupg && \
+	chown -R ${USER_NAME}:${USER_NAME} /run/user/${USER_UID} && \
+	chmod 700 /run/user/${USER_UID} /run/user/${USER_UID}/gnupg
 
 RUN echo "**** Install mold ****" && \
 	set -euxo pipefail && \
@@ -154,13 +160,25 @@ ENV CARGO_HOME=/home/${USER_NAME}/.cargo
 RUN echo "**** Directory Create ****" && \
 	set -euxo pipefail && \
 	mkdir -p \
+	~/.claude \
 	~/.config \
+	~/.config/gh \
 	~/.config/mise \
+	~/.gitconfig.d \
+	~/.gnupg \
 	~/.local \
 	~/.local/bin \
 	~/.local/share \
 	~/.local/share/claude \
-	~/.local/share/mise
+	~/.local/share/mise \
+	~/.ssh \
+	\
+	&& \
+	chmod 700 ~/.gnupg ~/.ssh && \
+	touch \
+	~/.claude.json \
+	~/.gitconfig \
+	~/.gnupg/pubring.kbx
 
 RUN echo "**** Create ${CARGO_HOME} ****" && \
 	set -euxo pipefail && \
@@ -198,8 +216,15 @@ case ":$PATH:" in
 	*:"$HOME/.local/bin":*) ;;
 	*) export PATH="$HOME/.local/bin:$PATH" ;;
 esac
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export GPG_TTY="$(tty 2>/dev/null || true)"
 alias cc="claude --dangerously-skip-permissions"
 
 _DOC_
 EOF
+
+# graft:keep-start
+# Project-specific dependencies are listed here.
+
+# graft:keep-end
 

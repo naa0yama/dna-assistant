@@ -64,7 +64,7 @@ All tasks use `mise run <task>`:
 | O2 (stop)                     | `mise run o2:stop`            |
 | CodeQL (install)              | `mise run codeql:install`     |
 | CodeQL (analyze)              | `mise run codeql`             |
-| Traefik setup (WSL2, once)    | `mise run traefik:setup`      |
+| Traefik setup (run once)      | `mise run traefik:setup`      |
 | DevContainer up               | `mise run dev:up`             |
 | DevContainer down             | `mise run dev:down`           |
 | DevContainer exec             | `mise run dev:exec`           |

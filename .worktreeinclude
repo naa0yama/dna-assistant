@@ -2,10 +2,10 @@
 .claude/skills/lib-*/SKILL.md
 .claude/skills/tool-*/SKILL.md
 
-# o2
+# MCP config
 .mcp.json
 
-# gh-sync:keep-start
+# graft:keep-start
 # Project-specific dependencies are listed here.
 
-# gh-sync:keep-end
+# graft:keep-end
