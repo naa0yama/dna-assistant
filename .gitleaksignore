@@ -1,0 +1,6 @@
+# gitleaks:ignore entries for false positives
+# Format: <commit>:<file>:<rule-id>:<line>
+#
+# f8a77b6b Initial commit: ast-rules/_rules.md bad-example for no-hardcoded-credentials
+# gitleaks:allow covers working-tree only; .gitleaksignore suppresses full-history scan.
+f8a77b6beffb76f34e1e1f72676dfabb66bc4440:ast-rules/_rules.md:generic-api-key:181
