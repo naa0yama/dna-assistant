@@ -1,0 +1,2 @@
+# gitleaks:ignore entries for false positives
+# Format: <commit>:<file>:<rule-id>:<line>
