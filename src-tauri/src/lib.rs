@@ -49,6 +49,7 @@ fn build(filter_handle: telemetry::EnvFilterHandle) -> tauri::Result<tauri::App>
             commands::get_default_settings,
             commands::save_settings,
             commands::test_notification,
+            commands::reset_round,
             commands::restart_app,
             commands::get_app_version,
         ]);

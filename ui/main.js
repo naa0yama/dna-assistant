@@ -291,6 +291,9 @@ startBtn.addEventListener("click", async () => {
 stopBtn.addEventListener("click", async () => {
   try { await invoke("stop_monitoring"); } catch (e) { console.error("stop failed:", e); }
 });
+document.getElementById("reset-round-btn").addEventListener("click", async () => {
+  try { await invoke("reset_round"); } catch (e) { console.error("reset_round failed:", e); }
+});
 clearLogBtn.addEventListener("click", clearLog);
 clearLogFullBtn.addEventListener("click", clearLog);
 
@@ -303,6 +306,11 @@ listen("detection-event", (event) => {
   const { kind, detail, round_number, elapsed, elapsed_secs } = event.payload;
   addLogEntry(kind, detail, round_number, elapsed);
   updateDetectorFromEvent(kind, elapsed_secs);
+});
+
+listen("round-reset", () => {
+  stopRoundtripTimer(null);
+  updateDetectorBadge(detRoundtrip, "unknown", "--");
 });
 
 // --- Capture preview (Detection page) ---
@@ -395,7 +403,8 @@ const STRING_KEYS = new Set([
   "debug_rust_log", "debug_otel_endpoint", "debug_otel_headers",
 ]);
 
-// Sidebar Discord toggle (outside settings form)
+// Sidebar notification channel toggles (outside settings form)
+const desktopToggle = document.getElementById("desktop-toggle");
 const discordToggle = document.getElementById("discord-toggle");
 
 function collectSettings() {
@@ -415,7 +424,8 @@ function collectSettings() {
       }
     }
   }
-  // Sync discord_enabled from sidebar toggle
+  // Sync sidebar toggles
+  config.desktop_enabled = desktopToggle.checked;
   config.discord_enabled = discordToggle.checked;
   return config;
 }
@@ -425,7 +435,8 @@ async function loadSettings() {
     const config = await invoke("get_settings");
     populateSettings(config);
     updateDetectorEnabledState(config);
-    // Sync sidebar Discord toggle
+    // Sync sidebar toggles
+    desktopToggle.checked = config.desktop_enabled ?? true;
     discordToggle.checked = config.discord_enabled || false;
   } catch (e) {
     console.error("get_settings failed:", e);
@@ -490,7 +501,17 @@ testNotificationBtn.addEventListener("click", async () => {
   }
 });
 
-// --- Sidebar Discord toggle auto-save ---
+// --- Sidebar notification channel toggle auto-save ---
+desktopToggle.addEventListener("change", async () => {
+  try {
+    const config = await invoke("get_settings");
+    config.desktop_enabled = desktopToggle.checked;
+    await invoke("save_settings", { config });
+  } catch (e) {
+    console.error("desktop toggle save failed:", e);
+  }
+});
+
 discordToggle.addEventListener("change", async () => {
   try {
     const config = await invoke("get_settings");
@@ -505,6 +526,7 @@ discordToggle.addEventListener("change", async () => {
 invoke("get_status").then(updateStatusUI).catch(console.error);
 invoke("get_settings").then((config) => {
   updateDetectorEnabledState(config);
+  desktopToggle.checked = config.desktop_enabled ?? true;
   discordToggle.checked = config.discord_enabled || false;
 }).catch(console.error);
 invoke("get_app_version").then((v) => {

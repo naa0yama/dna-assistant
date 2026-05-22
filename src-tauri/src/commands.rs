@@ -5,6 +5,8 @@ use tauri::State;
 use tracing::instrument;
 use tracing_subscriber::EnvFilter;
 
+use std::sync::atomic::Ordering;
+
 use crate::monitor::{self, CaptureInfo, MonitorConfig, MonitorState, MonitorStatus};
 use crate::notification::NotificationManager;
 use crate::telemetry::EnvFilterHandle;
@@ -208,7 +210,13 @@ pub fn get_app_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
-/// Send a test notification (Discord or Windows toast depending on config).
+/// Reset round state from IPC (signals the monitor loop to clear all round tracking).
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+pub fn reset_round(state: State<'_, MonitorState>) {
+    state.reset_requested.store(true, Ordering::Relaxed);
+}
+
 #[tauri::command]
 #[instrument(skip_all)]
 #[allow(clippy::needless_pass_by_value)]

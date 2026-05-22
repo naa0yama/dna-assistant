@@ -30,6 +30,7 @@ enum TriggerKind {
     RoundTripYellow,
     RoundTripRed,
     CaptureLost,
+    ResultIdle,
 }
 
 /// Configuration for a notification trigger.
@@ -89,6 +90,12 @@ const fn trigger_config(kind: TriggerKind, cfg: &MonitorConfig) -> TriggerConfig
             title: "キャプチャ停止",
             body: "ウィンドウのキャプチャに失敗しました。最小化されていないか確認してください",
         },
+        TriggerKind::ResultIdle => TriggerConfig {
+            sustain_duration: Duration::from_secs(0),
+            cooldown: cfg.notify_result_idle_threshold,
+            title: "リザルト放置中",
+            body: "リザルト画面が表示されたまま次のラウンドが始まっていません",
+        },
     }
 }
 
@@ -124,6 +131,8 @@ pub struct NotificationManager {
     roundtrip_repeat_count: u32,
     /// How many times `CaptureLost` has repeated.
     capture_lost_repeat_count: u32,
+    /// How many times `ResultIdle` has repeated.
+    result_idle_repeat_count: u32,
     /// Current round number (set externally from monitor loop).
     current_round: Option<u32>,
     /// Latest captured frame for Discord screenshot attachment.
@@ -144,6 +153,7 @@ impl NotificationManager {
             round_notified: false,
             roundtrip_repeat_count: 0,
             capture_lost_repeat_count: 0,
+            result_idle_repeat_count: 0,
             current_round: None,
             latest_frame: None,
             config: config.clone(),
@@ -285,6 +295,47 @@ impl NotificationManager {
         }
     }
 
+    /// Notify result screen idle (called each tick while result is visible and no new round).
+    ///
+    /// Fires once after `elapsed >= notify_result_idle_threshold`, then repeats at the same
+    /// interval up to `notification_max_repeat` times total.
+    pub fn notify_result_idle(&mut self, elapsed: Duration) {
+        let kind = TriggerKind::ResultIdle;
+
+        if !self.config.notify_result_idle_enabled {
+            return;
+        }
+        if elapsed < self.config.notify_result_idle_threshold {
+            return;
+        }
+        if self.result_idle_repeat_count >= self.config.notification_max_repeat {
+            return;
+        }
+
+        let now = Instant::now();
+        let tc = trigger_config(kind, &self.config);
+        if let Some(&last) = self.last_notified.get(&kind)
+            && now.duration_since(last) < tc.cooldown
+        {
+            return;
+        }
+
+        #[cfg(target_os = "windows")]
+        if self.config.suppress_when_game_focused && Self::is_game_focused() {
+            return;
+        }
+
+        self.send_toast_and_discord(tc.title, tc.body, false);
+        self.last_notified.insert(kind, now);
+        self.result_idle_repeat_count = self.result_idle_repeat_count.saturating_add(1);
+    }
+
+    /// Reset `ResultIdle` state (call on `RoundVisible` or `ResultScreenGone`).
+    pub fn reset_result_idle(&mut self) {
+        self.result_idle_repeat_count = 0;
+        self.last_notified.remove(&TriggerKind::ResultIdle);
+    }
+
     /// Process detection events and send notifications if trigger conditions are met.
     #[instrument(skip_all)]
     pub fn process_events(&mut self, events: &[DetectionEvent]) {
@@ -346,6 +397,7 @@ impl NotificationManager {
             TriggerKind::RoundTripYellow => self.config.notify_roundtrip_yellow,
             TriggerKind::RoundTripRed => self.config.notify_roundtrip_red,
             TriggerKind::CaptureLost => self.config.notify_capture_lost_enabled,
+            TriggerKind::ResultIdle => self.config.notify_result_idle_enabled,
         }
     }
 
@@ -463,7 +515,7 @@ impl NotificationManager {
         }
     }
 
-    /// Send notification with optional screenshot and mention (Discord only).
+    /// Send notification with optional screenshot (Discord) and/or toast (desktop).
     fn send_notification_with_image(&self, title: &str, body: &str, mention: bool) {
         if self.config.is_discord_active() {
             let image_data = self.capture_screenshot();
@@ -474,29 +526,29 @@ impl NotificationManager {
             };
             let client = self.http_client.clone();
             let webhook_url = self.config.discord_webhook_url.clone();
-            let title = title.to_owned();
-            let body = body.to_owned();
+            let title_d = title.to_owned();
+            let body_d = body.to_owned();
             std::thread::spawn(move || {
                 Self::send_discord(
                     &client,
                     &webhook_url,
-                    &title,
-                    &body,
+                    &title_d,
+                    &body_d,
                     image_data,
                     mention_id.as_deref(),
                 );
             });
-        } else {
+        }
+        if self.config.desktop_enabled {
             Self::send_toast(title, body);
         }
     }
 
-    /// Send Windows toast AND Discord webhook (when configured).
-    ///
-    /// Unlike [`send_notification_with_image`] (which sends to one or the other),
-    /// this always sends a toast and optionally adds a Discord message.
+    /// Send Windows toast (when enabled) AND Discord webhook (when configured).
     fn send_toast_and_discord(&self, title: &str, body: &str, mention: bool) {
-        Self::send_toast(title, body);
+        if self.config.desktop_enabled {
+            Self::send_toast(title, body);
+        }
         if self.config.is_discord_active() {
             let mention_id = if mention {
                 Some(self.config.discord_mention_id.clone())
@@ -566,7 +618,7 @@ impl NotificationManager {
         Some(png_bytes)
     }
 
-    /// Send a test notification to verify delivery (Discord or toast).
+    /// Send a test notification to verify delivery (Discord and/or toast).
     pub fn send_test_notification(config: &MonitorConfig) {
         let title = "DNA Assistant テスト";
         let body = "通知が正常に動作しています";
@@ -588,7 +640,8 @@ impl NotificationManager {
                     mention_id.as_deref(),
                 );
             });
-        } else {
+        }
+        if config.desktop_enabled {
             Self::send_toast(title, body);
         }
     }

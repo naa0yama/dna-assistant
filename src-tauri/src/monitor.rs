@@ -152,9 +152,21 @@ pub struct MonitorConfig {
     /// Sustain duration for capture-lost before notification (sec).
     #[serde(default = "default_capture_lost_sustain", with = "serde_duration_secs")]
     pub notify_capture_lost_sustain: Duration,
+    /// Enable recurring notification when result screen is idle (no new round started).
+    #[serde(default = "default_true")]
+    pub notify_result_idle_enabled: bool,
+    /// Seconds after `ResultScreenVisible` before the first idle notification fires.
+    #[serde(
+        default = "default_result_idle_threshold",
+        with = "serde_duration_secs"
+    )]
+    pub notify_result_idle_threshold: Duration,
     /// Suppress notifications when the game window is the foreground window.
     #[serde(default)]
     pub suppress_when_game_focused: bool,
+    /// Show Windows toast desktop notifications.
+    #[serde(default = "default_true")]
+    pub desktop_enabled: bool,
     /// Send notifications via Discord webhook instead of Windows toast.
     #[serde(default)]
     pub discord_enabled: bool,
@@ -216,6 +228,11 @@ const fn default_capture_lost_sustain() -> Duration {
 }
 
 #[cfg(target_os = "windows")]
+const fn default_result_idle_threshold() -> Duration {
+    Duration::from_secs(50)
+}
+
+#[cfg(target_os = "windows")]
 const fn default_confirmation_ratio() -> f64 {
     0.80
 }
@@ -249,7 +266,10 @@ impl Default for MonitorConfig {
             notification_max_repeat: 5,
             notify_capture_lost_enabled: true,
             notify_capture_lost_sustain: Duration::from_secs(5),
+            notify_result_idle_enabled: true,
+            notify_result_idle_threshold: Duration::from_secs(50),
             suppress_when_game_focused: false,
+            desktop_enabled: true,
             discord_enabled: false,
             discord_webhook_url: String::new(),
             discord_mention_id: String::new(),
@@ -549,6 +569,8 @@ mod platform {
         pub status: Arc<Mutex<MonitorStatus>>,
         pub latest_frame: Arc<Mutex<LatestFrame>>,
         pub config: Arc<Mutex<MonitorConfig>>,
+        /// Set to `true` by `reset_round` IPC; the monitor loop clears it and resets state.
+        pub reset_requested: Arc<AtomicBool>,
     }
 
     impl MonitorState {
@@ -561,6 +583,7 @@ mod platform {
                 status: Arc::new(Mutex::new(MonitorStatus::default())),
                 latest_frame: Arc::new(Mutex::new(LatestFrame::default())),
                 config: Arc::new(Mutex::new(MonitorConfig::default())),
+                reset_requested: Arc::new(AtomicBool::new(false)),
             }
         }
 
@@ -599,6 +622,7 @@ mod platform {
         let status = state.status.clone();
         let latest_frame = state.latest_frame.clone();
         let monitor_config = state.config.lock().map(|c| c.clone()).unwrap_or_default();
+        let reset_requested = state.reset_requested.clone();
 
         let thread = thread::Builder::new()
             .name("monitor-loop".into())
@@ -606,6 +630,7 @@ mod platform {
                 monitor_loop(
                     app_handle,
                     stop_flag_clone,
+                    reset_requested,
                     status,
                     latest_frame,
                     monitor_config,
@@ -653,6 +678,7 @@ mod platform {
     fn monitor_loop(
         app_handle: AppHandle,
         stop_flag: Arc<AtomicBool>,
+        reset_requested: Arc<AtomicBool>,
         status: Arc<Mutex<MonitorStatus>>,
         latest_frame: Arc<Mutex<LatestFrame>>,
         monitor_config: MonitorConfig,
@@ -681,6 +707,8 @@ mod platform {
         // Round state tracking
         let mut current_round: Option<u32> = None;
         let mut round_start: Option<Instant> = None;
+        // When ResultScreenVisible was confirmed; drives ResultIdle notifications.
+        let mut result_idle_start: Option<Instant> = None;
         // Round number votes from OCR frames (cleared on RoundVisible)
         let mut select_round_votes: Vec<u32> = Vec::new();
         // Recent confirmed round numbers (max 3) for consecutive inference
@@ -799,6 +827,24 @@ mod platform {
             loop {
                 if stop_flag.load(Ordering::Relaxed) {
                     return;
+                }
+
+                // Handle reset_round IPC request
+                if reset_requested
+                    .compare_exchange(true, false, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    current_round = None;
+                    round_start = None;
+                    result_idle_start = None;
+                    result_scanning = false;
+                    result_visible_confirmed = false;
+                    select_round_votes.clear();
+                    round_history.clear();
+                    notification_mgr = NotificationManager::new(&monitor_config);
+                    notification_mgr.set_latest_frame(latest_frame.clone());
+                    let _ = app_handle.emit("round-reset", ());
+                    debug!("round state reset by IPC request");
                 }
 
                 let frame_start = Instant::now();
@@ -965,6 +1011,11 @@ mod platform {
                     notification_mgr.notify_roundtrip(start.elapsed());
                 }
 
+                // ResultIdle: fires when result screen is idle (no new round started).
+                if let Some(start) = result_idle_start {
+                    notification_mgr.notify_result_idle(start.elapsed());
+                }
+
                 // Filter to state transitions only for UI
                 let transition_events: Vec<DetectionEvent> = raw_events
                     .into_iter()
@@ -1002,6 +1053,9 @@ mod platform {
                                 }
                                 // Reset RoundTrip notifications for new round
                                 notification_mgr.reset_roundtrip();
+                                // New round seen: cancel result idle tracking
+                                notification_mgr.reset_result_idle();
+                                result_idle_start = None;
                                 // Clear stale OCR data from previous cycle
                                 select_round_votes.clear();
                                 // New round started: stop result scanning
@@ -1056,6 +1110,8 @@ mod platform {
                                 // Quest complete: reset round state
                                 round_start = None;
                                 current_round = None;
+                                // Start idle timer (reset if already running)
+                                result_idle_start = Some(Instant::now());
                                 // Keep result_scanning=true until Gone confirms
                                 // Notify ResultScreen (confirmed by TransitionFilter)
                                 notification_mgr.notify_result_screen();
@@ -1070,6 +1126,8 @@ mod platform {
                                 }
                                 round_start = None;
                                 notification_mgr.reset_roundtrip();
+                                notification_mgr.reset_result_idle();
+                                result_idle_start = None;
                             }
                             _ => {}
                         }
@@ -1713,5 +1771,36 @@ mod tests {
         assert!(config.debug_rust_log.is_empty());
         assert!(config.debug_otel_endpoint.is_empty());
         assert!(config.debug_otel_headers.is_empty());
+    }
+
+    #[test]
+    fn monitor_config_desktop_enabled_defaults_true() {
+        // Existing settings.json without desktop_enabled must default to true
+        // to preserve toast notifications for all existing users.
+        let legacy = r#"{
+            "capture_interval": 200,
+            "window_search_interval": 3000,
+            "max_capture_retries": 3,
+            "preview_interval": 200,
+            "notification_cooldown": 60.0,
+            "notify_dialog_sustain": 3.0,
+            "notify_round_sustain": 5.0,
+            "notify_round_cooldown": 10.0
+        }"#;
+        let config: MonitorConfig = serde_json::from_str(legacy).unwrap();
+        assert!(
+            config.desktop_enabled,
+            "desktop_enabled must default to true for backwards compatibility"
+        );
+    }
+
+    #[test]
+    fn monitor_config_default_desktop_enabled_true() {
+        assert!(MonitorConfig::default().desktop_enabled);
+    }
+
+    #[test]
+    fn monitor_config_default_discord_enabled_false() {
+        assert!(!MonitorConfig::default().discord_enabled);
     }
 }

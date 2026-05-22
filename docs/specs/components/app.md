@@ -6,6 +6,7 @@
 >
 > - [Capture レイヤー](./capture.md)
 > - [RoundDetector](./round-detector.md)
+> - [Notifications](./notifications.md)
 
 ## 1.1 背景
 
@@ -89,7 +90,7 @@ flowchart TD
 | メインスレッド   | Tauri イベントループ、IPC コマンドハンドラ    |
 | モニタースレッド | キャプチャ → 検出 → 通知ループ(`std::thread`) |
 
-モニタースレッドの制御は `Arc<AtomicBool>` の停止フラグで行う。`start_monitoring` でスレッドを起動し、`stop_monitoring` でフラグを立ててスレッド終了を待機する。
+モニタースレッドの制御は `Arc<AtomicBool>` のフラグで行う。停止フラグ (`stop_flag`) と リセット要求フラグ (`reset_requested`) の 2 本を使用する。`start_monitoring` でスレッドを起動し、`stop_monitoring` でフラグを立ててスレッド終了を待機する。`reset_round` は `reset_requested` を立て、次のティックで状態をクリアする。
 
 ## 1.4 IPC コマンド
 
@@ -168,6 +169,17 @@ async fn save_settings(app_handle: AppHandle, state: State<'_, MonitorState>, co
 pub fn get_app_version(app: tauri::AppHandle) -> String;
 ```
 
+### `reset_round`
+
+モニターループに `reset_requested` フラグを立て、次のティックで全ラウンド状態をクリアさせる。モニタリング停止中は何もしない(フラグは次回起動時に消費される)。
+
+```rust
+#[tauri::command]
+pub fn reset_round(state: State<'_, MonitorState>);
+```
+
+リセット対象: `current_round`, `round_start`, `result_idle_start`, `result_scanning`, `result_visible_confirmed`, `select_round_votes`, `round_history`, `NotificationManager` 全体。完了後に `round-reset` イベントを emit する。
+
 ### `greet`(既存)
 
 接続テスト用コマンド。
@@ -176,10 +188,11 @@ pub fn get_app_version(app: tauri::AppHandle) -> String;
 
 バックエンドからフロントエンドへの状態通知には Tauri のイベントシステムを使用する。
 
-| イベント名        | ペイロード                         | タイミング         |
-| ----------------- | ---------------------------------- | ------------------ |
-| `monitor-status`  | `MonitorStatus` (JSON)             | 状態変化時         |
-| `detection-event` | `{ kind: string, detail: string }` | 検出イベント発生時 |
+| イベント名        | ペイロード                         | タイミング                     |
+| ----------------- | ---------------------------------- | ------------------------------ |
+| `monitor-status`  | `MonitorStatus` (JSON)             | 状態変化時                     |
+| `detection-event` | `{ kind: string, detail: string }` | 検出イベント発生時             |
+| `round-reset`     | `()` (empty)                       | `reset_round` IPC 処理完了直後 |
 
 フロントエンドは `listen()` でイベントを購読し、リアルタイムに UI を更新する。
 
@@ -189,18 +202,21 @@ pub fn get_app_version(app: tauri::AppHandle) -> String;
 
 detection-overview.md セクション 1.6 で定義されたトリガーを実装する。
 
-| トリガー              | 条件                               | 持続時間 | クールダウン | 優先度 | 通知タイトル        |
-| --------------------- | ---------------------------------- | -------- | ------------ | ------ | ------------------- |
-| ダイアログ表示        | `DialogVisible` が持続             | 3 秒     | 60 秒        | 高     | "ダイアログ検出"    |
-| ラウンド完了          | `RoundGone` が持続                 | 5 秒     | 10 秒        | 中     | "ラウンド完了"      |
-| 依頼完了(OCR)         | `ResultScreenVisible` 確定         | 0 秒     | 10 秒        | 中     | "依頼完了"          |
-| RoundTrip Green 超過  | RoundTrip 経過 >= Green 閾値       | 0 秒     | 10 秒        | 中     | "RoundTrip: Green"  |
-| RoundTrip Yellow 超過 | RoundTrip 経過 >= Yellow 閾値      | 0 秒     | 10 秒        | 高     | "RoundTrip: Yellow" |
-| RoundTrip Red 超過    | RoundTrip 経過 >= Red 閾値         | 0 秒     | 10 秒        | 高     | "RoundTrip: Red"    |
-| キャプチャ停止        | キャプチャ失敗が sustain 時間持続  | 5 秒     | 60 秒        | 高     | "キャプチャ停止"    |
-| キャプチャ復帰        | キャプチャ停止後にフレーム取得成功 | —        | —            | 中     | "キャプチャ復帰"    |
+| トリガー              | 条件                                                   | 持続時間 | クールダウン                   | 優先度 | 通知タイトル        |
+| --------------------- | ------------------------------------------------------ | -------- | ------------------------------ | ------ | ------------------- |
+| ダイアログ表示        | `DialogVisible` が持続                                 | 3 秒     | 60 秒                          | 高     | "ダイアログ検出"    |
+| ラウンド完了          | `RoundGone` が持続                                     | 5 秒     | 10 秒                          | 中     | "ラウンド完了"      |
+| 依頼完了(OCR)         | `ResultScreenVisible` 確定                             | 0 秒     | 10 秒                          | 中     | "依頼完了"          |
+| リザルト放置          | `ResultScreenVisible` 確定後に `RoundVisible` が来ない | 0 秒     | `notify_result_idle_threshold` | 中     | "リザルト放置中"    |
+| RoundTrip Green 超過  | RoundTrip 経過 >= Green 閾値                           | 0 秒     | 10 秒                          | 中     | "RoundTrip: Green"  |
+| RoundTrip Yellow 超過 | RoundTrip 経過 >= Yellow 閾値                          | 0 秒     | 10 秒                          | 高     | "RoundTrip: Yellow" |
+| RoundTrip Red 超過    | RoundTrip 経過 >= Red 閾値                             | 0 秒     | 10 秒                          | 高     | "RoundTrip: Red"    |
+| キャプチャ停止        | キャプチャ失敗が sustain 時間持続                      | 5 秒     | 60 秒                          | 高     | "キャプチャ停止"    |
+| キャプチャ復帰        | キャプチャ停止後にフレーム取得成功                     | —        | —                              | 中     | "キャプチャ復帰"    |
 
-繰り返し通知(RoundTrip 最高レベル、キャプチャ停止)は `notification_max_repeat` (デフォルト 5) 回まで送信する。`notify_result_screen()` は `TransitionFilter` による確定後に呼び出される。キャプチャ停止/復帰は Discord ON でも常に Windows Toast + Discord の両方に送信する。
+繰り返し通知(RoundTrip 最高レベル、キャプチャ停止、リザルト放置)は `notification_max_repeat` (デフォルト 5) 回まで送信する。`notify_result_screen()` は `TransitionFilter` による確定後に呼び出される。キャプチャ停止/復帰は `desktop_enabled`/`discord_enabled` の独立ディスパッチに従う。
+
+リザルト放置通知 (`ResultIdle`) は `ResultScreenVisible` 確定時に `result_idle_start` タイマーを開始し、`RoundVisible` または `ResultScreenGone` で `reset_result_idle()` を呼びリセットする。繰り返し間隔 = `notify_result_idle_threshold`。詳細は [notifications.md](./notifications.md) を参照。
 
 ### 通知重複制御
 
@@ -243,17 +259,20 @@ Detector → [OCR 補正] → NotificationManager(持続時間判定) → Toast
 
 ### コンポーネント
 
-| コンポーネント | 内容                                                   |
-| -------------- | ------------------------------------------------------ |
-| Status Card    | 現在の状態バッジ、フレーム数、イベント数               |
-| Control Card   | Start / Stop ボタン(状態に応じて有効/無効を切り替え)   |
-| Event Log Card | 直近の検出イベントを時系列で表示(最大 50 件、新しい順) |
+| コンポーネント | 内容                                                             |
+| -------------- | ---------------------------------------------------------------- |
+| Status Card    | 現在の状態バッジ、フレーム数、イベント数                         |
+| Control Card   | Start / Stop / Reset ボタン(Start・Stop は状態に応じて有効/無効) |
+| Event Log Card | 直近の検出イベントを時系列で表示(最大 50 件、新しい順)           |
+
+サイドバー下部に Desktop (toast) と Discord の通知チャンネルトグルを配置。独立して ON/OFF でき、変更時は即座に `save_settings` を呼ぶ。
 
 ### IPC 連携
 
-- ボタンクリック時: `invoke("start_monitoring")` / `invoke("stop_monitoring")`
+- ボタンクリック時: `invoke("start_monitoring")` / `invoke("stop_monitoring")` / `invoke("reset_round")`
 - 初回ロード時: `invoke("get_status")` でステータス取得、`invoke("get_app_version")` でバージョン取得(サイドバーに表示)
-- リアルタイム更新: `listen("monitor-status")` / `listen("detection-event")`
+- リアルタイム更新: `listen("monitor-status")` / `listen("detection-event")` / `listen("round-reset")`
+- `round-reset` 受信時: ラウンドトリップタイマーバッジを `--` にリセット
 
 ## 1.8 Tauri 状態管理
 
@@ -267,6 +286,8 @@ pub struct MonitorState {
     pub latest_frame: Arc<Mutex<LatestFrame>>,
     /// Monitor loop configuration (loaded from disk on startup).
     pub config: Arc<Mutex<MonitorConfig>>,
+    /// Set to `true` by `reset_round` IPC; the monitor loop clears it and resets state.
+    pub reset_requested: Arc<AtomicBool>,
 }
 
 struct MonitorHandle {
@@ -303,6 +324,9 @@ pub struct MonitorStatus {
 - [x] 検出結果のスクリーンショット保存 — `TRACE` レベル時に `debug-frames/` へ保存
 - [x] OTel メトリクス計装 — `telemetry/metrics.rs` の `AppMetrics` でモニターループ・キャプチャ・OCR・WGC ライフサイクル等を計装。`telemetry/mod.rs` でプロセスレベルメトリクス(`process.memory.*`, `process.cpu.utilization`, `process.uptime`)を `sysinfo` 経由で登録。`telemetry/conventions.rs` で `dna.*` メトリクス名・属性キーを定数として一元管理
 - [x] OTel ログエクスポーター — `OpenTelemetryTracingBridge` (`opentelemetry-appender-tracing`) を `telemetry/mod.rs` に追加。tracing ログを OTel logs シグナルとして OTLP エクスポート。シャットダウン順序はトレーサー → メーター → ロガーの順で制御
+- [x] リザルト放置通知 — `TriggerKind::ResultIdle` + `notify_result_idle()` / `reset_result_idle()`。閾値秒数は `notify_result_idle_threshold` (デフォルト 50 秒)、ON/OFF は `notify_result_idle_enabled`
+- [x] ラウンドリセットボタン — `reset_round` IPC コマンド + `reset_requested: Arc<AtomicBool>` フラグ。モニタリング中でも全ラウンド状態をクリア可能
+- [x] Desktop 通知チャンネル制御 — `desktop_enabled` (デフォルト `true`) で Windows Toast の ON/OFF を独立制御。Discord と直交する設計。詳細は [notifications.md](./notifications.md)
 - [ ] システムトレイアイコン — 最小化時にトレイに格納、状態をアイコンで表示
 - [ ] キャプチャ間隔のユーザー設定 UI — 現在はデフォルト 2 秒固定
 - [ ] 通知音のカスタマイズ — Windows Toast のオーディオ設定
