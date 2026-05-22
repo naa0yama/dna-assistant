@@ -1,18 +1,26 @@
 # Changelog
 
 ## [v0.1.12](https://github.com/naa0yama/dna-assistant/compare/v0.1.11...v0.1.12) - 2026-05-22
+
 ### Features 🎉
+
 - feat(notification): add desktop toggle, result idle alerts, and round reset by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/186
+
 ### Documentation 🗒️
+
 - chore(devcontainer): add traefik routing, CI badge improvements, and telemetry refactor by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/114
 - chore(mise): add cargo-nextest and restructure tasks.toml by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/152
+
 ### Dependency Updates 📦
+
 - chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/105
 - chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/121
 - chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/143
 - chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/169
 - chore(deps): update rust crate assert_cmd to v2.2.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/173
+
 ### Development Environment 🔧
+
 - chore(deps): update taiki-e/install-action action to v2.75.18 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/103
 - chore(deps): update taiki-e/install-action action to v2.75.19 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/106
 - chore(deps): update dependency usage to v3.2.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/107
@@ -77,7 +85,9 @@
 - chore(deps): update taiki-e/install-action action to v2.78.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/184
 - chore(deps): update zizmorcore/zizmor-action action to v0.5.4 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/185
 - chore(deps): update github/codeql-action action to v4.35.5 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/188
+
 ### Other Changes
+
 - chore: backport graft migration and devcontainer GPG/SSH support by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/130
 - chore(deps): update rust crate tauri to v2.11.1 [security] by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/134
 - chore(deps): update graft to 0.5.5 by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/140
