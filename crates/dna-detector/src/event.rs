@@ -54,6 +54,16 @@ pub enum DetectionEvent {
         /// When this was detected.
         timestamp: Instant,
     },
+    /// Genemon liberation quest text is visible in the quest ROI.
+    GenemonVisible {
+        /// When this was detected.
+        timestamp: Instant,
+    },
+    /// Genemon liberation quest text is no longer visible.
+    GenemonGone {
+        /// When this was detected.
+        timestamp: Instant,
+    },
     /// Round selection screen detected ("自動周回中").
     RoundSelectScreen {
         /// Next round number from right panel (1-99).

@@ -12,6 +12,8 @@ pub struct DetectionConfig {
     pub round: RoundDetectorConfig,
     /// Dialog detector settings.
     pub dialog: DialogDetectorConfig,
+    /// Genemon detector settings.
+    pub genemon: GenemonDetectorConfig,
 }
 
 /// Configuration for the dialog detector.
@@ -146,6 +148,17 @@ impl Default for ResultScreenRoiConfig {
     }
 }
 
+/// Configuration for the genemon liberation quest detector.
+///
+/// Detects the genemon liberation quest via OCR: scans the quest ROI for
+/// the text "ジェネモン" or "解放". No pixel pre-filter.
+#[allow(clippy::module_name_repetitions)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GenemonDetectorConfig {
+    /// ROI for the quest text area (left-side quest log).
+    pub quest_roi: RoiDefinition,
+}
+
 impl Default for DetectionConfig {
     fn default() -> Self {
         Self {
@@ -185,6 +198,14 @@ impl Default for DetectionConfig {
                 brightness_min: 80,
                 max_chroma: 60,
                 bg_brightness_max: 50,
+            },
+            genemon: GenemonDetectorConfig {
+                quest_roi: RoiDefinition {
+                    x: 0.00,
+                    y: 0.43,
+                    width: 0.25,
+                    height: 0.08,
+                },
             },
         }
     }
