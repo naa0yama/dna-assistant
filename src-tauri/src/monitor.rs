@@ -1750,6 +1750,8 @@ mod platform {
 } // mod platform
 
 #[cfg(target_os = "windows")]
+pub(crate) use platform::format_elapsed;
+#[cfg(target_os = "windows")]
 pub use platform::{CaptureInfo, LatestFrame, MonitorState, start, stop};
 
 #[cfg(all(test, target_os = "windows"))]
