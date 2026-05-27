@@ -212,7 +212,10 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          Add-WindowsCapability -Online -Name Language.OCR~~~ja-JP~0.0.1.0
+          $cap = Get-WindowsCapability -Online -Name "Language.OCR~~~ja-JP~0.0.1.0"
+          if ($cap.State -ne "Installed") {
+            Add-WindowsCapability -Online -Name "Language.OCR~~~ja-JP~0.0.1.0"
+          }
 
       - name: Run dna-capture tests (Windows)
         if: matrix.os == 'windows-latest'
