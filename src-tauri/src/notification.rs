@@ -13,7 +13,7 @@ use dna_detector::event::DetectionEvent;
 use image::ImageFormat;
 use tracing::{debug, instrument, warn};
 
-use crate::monitor::MonitorConfig;
+use crate::monitor::{MonitorConfig, format_elapsed};
 
 /// Maximum width for Discord screenshot attachment.
 const DISCORD_IMAGE_MAX_WIDTH: u32 = 1920;
@@ -31,6 +31,7 @@ enum TriggerKind {
     RoundTripRed,
     CaptureLost,
     ResultIdle,
+    GenemonVisible,
 }
 
 /// Configuration for a notification trigger.
@@ -95,6 +96,12 @@ const fn trigger_config(kind: TriggerKind, cfg: &MonitorConfig) -> TriggerConfig
             cooldown: cfg.notify_result_idle_threshold,
             title: "リザルト放置中",
             body: "リザルト画面が表示されたまま次のラウンドが始まっていません",
+        },
+        TriggerKind::GenemonVisible => TriggerConfig {
+            sustain_duration: Duration::from_secs(0),
+            cooldown: cfg.notification_cooldown,
+            title: "ジェネモン発見",
+            body: "ジェネモンを探して解放しよう",
         },
     }
 }
@@ -359,6 +366,12 @@ impl NotificationManager {
                 DetectionEvent::DialogGone { .. } => {
                     self.clear_condition(TriggerKind::DialogVisible);
                 }
+                DetectionEvent::GenemonVisible { .. } => {
+                    self.track_condition(TriggerKind::GenemonVisible, now);
+                }
+                DetectionEvent::GenemonGone { .. } => {
+                    self.clear_condition(TriggerKind::GenemonVisible);
+                }
                 // ResultScreen: handled via confirmed transitions, not raw events.
                 // RoundSelectScreen: internal-only, no notifications.
                 DetectionEvent::ResultScreenVisible { .. }
@@ -398,6 +411,7 @@ impl NotificationManager {
             TriggerKind::RoundTripRed => self.config.notify_roundtrip_red,
             TriggerKind::CaptureLost => self.config.notify_capture_lost_enabled,
             TriggerKind::ResultIdle => self.config.notify_result_idle_enabled,
+            TriggerKind::GenemonVisible => self.config.notify_genemon_enabled,
         }
     }
 
@@ -753,17 +767,5 @@ impl NotificationManager {
         if let Err(e) = result {
             warn!(%e, "failed to send toast notification");
         }
-    }
-}
-
-/// Format a duration as human-readable elapsed time (e.g., "1m 23s").
-fn format_elapsed(duration: Duration) -> String {
-    let total_secs = duration.as_secs();
-    let mins = total_secs / 60;
-    let secs = total_secs % 60;
-    if mins > 0 {
-        format!("{mins}m {secs:02}s")
-    } else {
-        format!("{secs}s")
     }
 }

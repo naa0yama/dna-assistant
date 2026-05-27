@@ -104,6 +104,9 @@ pub struct MonitorConfig {
     /// Whether the Dialog detector is enabled.
     #[serde(default = "default_true")]
     pub dialog_enabled: bool,
+    /// Whether the Genemon detector is enabled.
+    #[serde(default = "default_true")]
+    pub genemon_enabled: bool,
     /// Sliding window duration for transition confirmation (sec).
     #[serde(default = "default_confirmation_window", with = "serde_duration_secs")]
     pub confirmation_window: Duration,
@@ -119,6 +122,9 @@ pub struct MonitorConfig {
     /// Whether to notify on `DialogVisible` events.
     #[serde(default = "default_true")]
     pub notify_dialog_enabled: bool,
+    /// Whether to notify on `GenemonVisible` events.
+    #[serde(default = "default_true")]
+    pub notify_genemon_enabled: bool,
     /// Whether to notify on `ResultScreen` events.
     #[serde(default = "default_true")]
     pub notify_result_enabled: bool,
@@ -251,11 +257,13 @@ impl Default for MonitorConfig {
             notify_round_cooldown: Duration::from_secs(10),
             round_enabled: true,
             dialog_enabled: true,
+            genemon_enabled: true,
             confirmation_window: Duration::from_secs(3),
             confirmation_ratio: 0.80,
             notifications_enabled: true,
             notify_round_enabled: true,
             notify_dialog_enabled: true,
+            notify_genemon_enabled: true,
             notify_result_enabled: true,
             roundtrip_green: Duration::from_secs(60),
             roundtrip_yellow: Duration::from_secs(120),
@@ -429,6 +437,7 @@ mod platform {
         Dialog,
         ResultScreen,
         RoundNumber,
+        Genemon,
     }
 
     /// Tracks last-seen event kind per detector category, forwarding only transitions.
@@ -439,9 +448,9 @@ mod platform {
     #[derive(Debug)]
     struct TransitionFilter {
         /// Confirmed state per category.
-        state: [Option<&'static str>; 4],
+        state: [Option<&'static str>; 5],
         /// Sliding window of recent event kinds per category.
-        history: [std::collections::VecDeque<&'static str>; 4],
+        history: [std::collections::VecDeque<&'static str>; 5],
         /// Number of frames in the sliding window.
         window_size: usize,
         /// Ratio threshold (0.0-1.0) for confirmation.
@@ -451,7 +460,7 @@ mod platform {
     impl TransitionFilter {
         fn new(window_size: usize, confirmation_ratio: f64) -> Self {
             Self {
-                state: [None; 4],
+                state: [None; 5],
                 history: std::array::from_fn(|_| {
                     std::collections::VecDeque::with_capacity(window_size)
                 }),
@@ -529,6 +538,9 @@ mod platform {
             DetectionEvent::ResultScreenVisible { .. }
             | DetectionEvent::ResultScreenGone { .. } => DetectorCategory::ResultScreen,
             DetectionEvent::RoundSelectScreen { .. } => DetectorCategory::RoundNumber,
+            DetectionEvent::GenemonVisible { .. } | DetectionEvent::GenemonGone { .. } => {
+                DetectorCategory::Genemon
+            }
         }
     }
 
@@ -726,6 +738,8 @@ mod platform {
         let round_number_rois = dna_detector::config::RoundNumberRoiConfig::default();
         let round_detector = RoundDetector::new(det_config.round.clone());
         let dialog_detector = DialogDetector::new(det_config.dialog.clone());
+        let genemon_detector =
+            dna_detector::detector::genemon::GenemonDetector::new(det_config.genemon.clone());
         let result_detector =
             ResultScreenDetector::new(dna_detector::config::ResultScreenRoiConfig::default());
 
@@ -914,6 +928,12 @@ mod platform {
                 }
                 if monitor_config.dialog_enabled {
                     raw_events.extend(dialog_detector.analyze(&game_frame));
+                }
+                // Genemon detector uses OCR directly — only runs when OCR is available.
+                if monitor_config.genemon_enabled {
+                    if let Some(ref ocr) = ocr_engine {
+                        raw_events.extend(genemon_detector.analyze(&game_frame, ocr));
+                    }
                 }
 
                 // OCR-assisted detection (Phase 2)
@@ -1220,6 +1240,8 @@ mod platform {
             DetectionEvent::DialogVisible { .. } => "DialogVisible",
             DetectionEvent::DialogGone { .. } => "DialogGone",
             DetectionEvent::RoundSelectScreen { .. } => "RoundSelectScreen",
+            DetectionEvent::GenemonVisible { .. } => "GenemonVisible",
+            DetectionEvent::GenemonGone { .. } => "GenemonGone",
         }
     }
 
@@ -1352,7 +1374,7 @@ mod platform {
     }
 
     /// Format a duration as human-readable elapsed time (e.g., "1m 23s").
-    fn format_elapsed(duration: Duration) -> String {
+    pub(crate) fn format_elapsed(duration: Duration) -> String {
         let total_secs = duration.as_secs();
         let mins = total_secs / 60;
         let secs = total_secs % 60;
@@ -1372,6 +1394,8 @@ mod platform {
             DetectionEvent::ResultScreenGone { .. } => String::from("リザルト終了"),
             DetectionEvent::DialogVisible { .. } => String::from("ダイアログ表示"),
             DetectionEvent::DialogGone { .. } => String::from("ダイアログ消失"),
+            DetectionEvent::GenemonVisible { .. } => String::from("ジェネモン出現"),
+            DetectionEvent::GenemonGone { .. } => String::from("ジェネモン消失"),
             // Internal-only events (not shown in UI)
             DetectionEvent::RoundSelectScreen { .. } => String::new(),
         }
@@ -1725,6 +1749,8 @@ mod platform {
     }
 } // mod platform
 
+#[cfg(target_os = "windows")]
+pub(crate) use platform::format_elapsed;
 #[cfg(target_os = "windows")]
 pub use platform::{CaptureInfo, LatestFrame, MonitorState, start, stop};
 

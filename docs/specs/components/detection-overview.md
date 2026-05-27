@@ -42,18 +42,19 @@ flowchart LR
 
 ### モジュール構成(`dna-detector`)
 
-| モジュール         | 責務                                                       |
-| ------------------ | ---------------------------------------------------------- |
-| `detector::round`  | `RoundDetector` — ラウンドテキスト有無の検出               |
-| `detector::dialog` | `DialogDetector` — ダイアログボックス(通信エラー等)の検出  |
-| `detector::result` | `ResultScreenDetector` — リザルト画面の OCR 検出           |
-| `ocr`              | `OcrEngine` トレイト — プラットフォーム非依存 OCR 抽象化   |
-| `state`            | `DebouncedDetector` — 一過性状態変化の抑制ラッパー         |
-| `config`           | `DetectionConfig` — 全 Detector の設定型                   |
-| `event`            | `DetectionEvent` — 検出イベント enum                       |
-| `roi`              | `RoiDefinition` / `PixelRect` — 比率ベース ROI             |
-| `color`            | `Hsv` / `HsvRange` / `rgb_to_hsv()` — 色空間ユーティリティ |
-| `titlebar`         | `crop_titlebar()` — タイトルバー検出・除去                 |
+| モジュール          | 責務                                                       |
+| ------------------- | ---------------------------------------------------------- |
+| `detector::round`   | `RoundDetector` — ラウンドテキスト有無の検出               |
+| `detector::dialog`  | `DialogDetector` — ダイアログボックス(通信エラー等)の検出  |
+| `detector::result`  | `ResultScreenDetector` — リザルト画面の OCR 検出           |
+| `detector::genemon` | `GenemonDetector` — ジェネモン解放クエストの OCR 検出      |
+| `ocr`               | `OcrEngine` トレイト — プラットフォーム非依存 OCR 抽象化   |
+| `state`             | `DebouncedDetector` — 一過性状態変化の抑制ラッパー         |
+| `config`            | `DetectionConfig` — 全 Detector の設定型                   |
+| `event`             | `DetectionEvent` — 検出イベント enum                       |
+| `roi`               | `RoiDefinition` / `PixelRect` — 比率ベース ROI             |
+| `color`             | `Hsv` / `HsvRange` / `rgb_to_hsv()` — 色空間ユーティリティ |
+| `titlebar`          | `crop_titlebar()` — タイトルバー検出・除去                 |
 
 ## 1.3 検出パイプライン
 
@@ -72,9 +73,12 @@ flowchart TD
     GAME --> ROUND["RoundDetector\n.analyze()"]
     GAME --> DIALOG["DialogDetector\n.analyze()"]
     GAME --> RESULT["ResultScreenDetector\n.analyze(frame, ocr)"]
+    GAME --> OCR_CHECK{"OCR エンジン\n利用可能?"}
+    OCR_CHECK -- Yes --> GENEMON["GenemonDetector\n.analyze(frame, ocr)"]
     ROUND --> EVENTS["DetectionEvent\nストリーム"]
     DIALOG --> EVENTS
     RESULT --> EVENTS
+    GENEMON --> EVENTS
     EVENTS --> OCR{"OCR エンジン\n利用可能?"}
     OCR -- Yes --> OCR_ENRICH["OCR 補正\n(round_number 付与,\n偽陽性除去)"]
     OCR -- No --> TRANSITION["TransitionFilter\n状態遷移フィルタ"]
@@ -154,20 +158,24 @@ flowchart TD
     PIXEL --> P_EVENTS["RoundVisible / RoundGone\nDialogVisible / DialogGone\nResultScreenVisible / ResultScreenGone"]
     P_EVENTS --> OCR{"OCR エンジン\n利用可能?"}
     OCR -- Yes --> ENRICH["OCR 補正・ゲーティング\n(src-tauri monitor loop)"]
+    OCR -- Yes --> GENEMON_DET["GenemonDetector\nOCR 直接検出(毎フレーム)"]
     OCR -- No --> NOTIFY["通知判定"]
     ENRICH --> ENRICHED["補正済みイベント\nRoundVisible + round_number\nResultScreenVisible / ResultScreenGone\nDialogVisible 偽陽性除去"]
+    GENEMON_DET --> GENEMON_EV["GenemonVisible / GenemonGone"]
     ENRICHED --> NOTIFY
+    GENEMON_EV --> NOTIFY
 ```
 
 ### OCR 補正ロジック(実装済み)
 
 モニターループの `run_ocr()` がピクセル検出結果に基づいて条件付きで OCR を実行する。
 
-| トリガー               | OCR ROI                                                   | 処理                                                                                     | ステータス |
-| ---------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------- |
-| `RoundVisible`         | `det_config.round.roi` (`x=0.0, y=0.25, w=0.237, h=0.10`) | "ラウンド" テキスト確認 → `round_number` 付与。未検出時は `RoundGone` に置換(偽陽性除去) | 実装済み   |
-| `ResultScreenDetector` | `x=0.85, y=0.93, w=0.15, h=0.07` (右下フッター)           | "依頼終了" テキスト検出 → `ResultScreenVisible` / `ResultScreenGone` 発行                | 実装済み   |
-| `DialogVisible`        | `x=0.25, y=0.35, w=0.50, h=0.20`                          | "Tips" テキスト確認。未検出時は `DialogGone` に置換(偽陽性除去)                          | 実装済み   |
+| トリガー               | OCR ROI                                                   | 処理                                                                                                             | ステータス |
+| ---------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------- |
+| `RoundVisible`         | `det_config.round.roi` (`x=0.0, y=0.25, w=0.237, h=0.10`) | "ラウンド" テキスト確認 → `round_number` 付与。未検出時は `RoundGone` に置換(偽陽性除去)                         | 実装済み   |
+| `ResultScreenDetector` | `x=0.85, y=0.93, w=0.15, h=0.07` (右下フッター)           | "依頼終了" テキスト検出 → `ResultScreenVisible` / `ResultScreenGone` 発行                                        | 実装済み   |
+| `DialogVisible`        | `x=0.25, y=0.35, w=0.50, h=0.20`                          | "Tips" テキスト確認。未検出時は `DialogGone` に置換(偽陽性除去)                                                  | 実装済み   |
+| `GenemonDetector`      | `x=0.00, y=0.43, w=0.25, h=0.08` (クエストログ左側)       | "ジェネモン" / "解放" テキスト検出 → `GenemonVisible` / `GenemonGone` 発行(ピクセル前段なし、毎フレーム直接 OCR) | 実装済み   |
 
 ### OCR 検出対象(未実装)
 
@@ -178,13 +186,14 @@ flowchart TD
 
 ### ピクセル検出と OCR の責務境界
 
-| 検出対象             | ピクセル検出            | OCR 補正                                                            | ステータス |
-| -------------------- | ----------------------- | ------------------------------------------------------------------- | ---------- |
-| ラウンドテキスト有無 | `RoundDetector` で検出  | "ラウンド" 未検出時に偽陽性除去                                     | 実装済み   |
-| ラウンド番号         | 検出不可                | OCR で数値抽出 → `round_number` に付与 (majority vote)              | 実装済み   |
-| リザルト画面         | —                       | `ResultScreenDetector` が "依頼終了" ROI (右下フッター) で OCR 検出 | 実装済み   |
-| ダイアログ表示       | `DialogDetector` で検出 | "Tips" 未検出時に偽陽性除去                                         | 実装済み   |
-| 自動周回状態         | 検出不可                | OCR でテキスト認識(未実装)                                          | 未実装     |
+| 検出対象               | ピクセル検出            | OCR 補正                                                                 | ステータス |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------ | ---------- |
+| ラウンドテキスト有無   | `RoundDetector` で検出  | "ラウンド" 未検出時に偽陽性除去                                          | 実装済み   |
+| ラウンド番号           | 検出不可                | OCR で数値抽出 → `round_number` に付与 (majority vote)                   | 実装済み   |
+| リザルト画面           | —                       | `ResultScreenDetector` が "依頼終了" ROI (右下フッター) で OCR 検出      | 実装済み   |
+| ダイアログ表示         | `DialogDetector` で検出 | "Tips" 未検出時に偽陽性除去                                              | 実装済み   |
+| ジェネモン解放クエスト | 検出不可                | `GenemonDetector` がクエスト ROI で "ジェネモン"/"解放" を毎フレーム検出 | 実装済み   |
+| 自動周回状態           | 検出不可                | OCR でテキスト認識(未実装)                                               | 未実装     |
 
 ## 1.6 通知戦略(`src-tauri` — 実装済み)
 
@@ -193,6 +202,7 @@ flowchart TD
 | ダイアログ表示        | `DialogVisible` が持続            | 3 秒     | **高** — 手動対応が必要 | ピクセル + OCR ゲート |
 | ラウンド完了          | `RoundGone` が持続                | 5 秒     | 中 — 情報通知           | ピクセル              |
 | 依頼完了(OCR)         | `ResultScreenVisible`             | 0 秒     | 中 — 確定的検出         | OCR                   |
+| ジェネモン発見        | `GenemonVisible`                  | 0 秒     | 中 — 情報通知           | OCR(直接)             |
 | RoundTrip Green 超過  | RoundTrip 経過 >= Green 閾値      | 0 秒     | 中 — 情報通知           | タイマー              |
 | RoundTrip Yellow 超過 | RoundTrip 経過 >= Yellow 閾値     | 0 秒     | **高** — 警告           | タイマー              |
 | RoundTrip Red 超過    | RoundTrip 経過 >= Red 閾値        | 0 秒     | **高** — 要対応         | タイマー              |
@@ -217,6 +227,9 @@ pub enum DetectionEvent {
     ResultScreenGone { timestamp: Instant },
     // Round selection screen (OCR-based, "自動周回中")
     RoundSelectScreen { next_round: Option<u32>, completed_round: Option<u32>, timestamp: Instant },
+    // Genemon liberation quest (OCR-based, direct per-frame detection)
+    GenemonVisible { timestamp: Instant },
+    GenemonGone { timestamp: Instant },
 }
 ```
 
@@ -247,6 +260,7 @@ Professional、NORMAL、CINEMATIQ の 3 フィルター全てで正常動作を�
 | `RoundDetector`        | 5 件           | 1 件(1600x900 ポストアップデート)                            | 2 画像       |
 | `DialogDetector`       | 6 件           | 4 件(通信エラー + 1600x900 全画面 + リザルト + ゲームプレイ) | 4 画像       |
 | `ResultScreenDetector` | 5 件           | —                                                            | —            |
+| `GenemonDetector`      | 5 件           | 2 件(visible + gone)                                         | 2 画像       |
 | `titlebar`             | 7 件           | (パイプラインテストでカバー)                                 | —            |
 | `DebouncedDetector`    | 4 件           | —                                                            | —            |
 | `config`               | 6 件           | —                                                            | —            |

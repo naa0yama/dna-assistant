@@ -67,7 +67,7 @@ flowchart TD
     RETRY -- No --> CAPTURE
     RETRY -- Yes --> FIND
     SUCCESS -- Yes --> TITLEBAR["crop_titlebar()"]
-    TITLEBAR --> DETECT["各 Detector.analyze()\n(Round, Dialog, Result)"]
+    TITLEBAR --> DETECT["各 Detector.analyze()\n(Round, Dialog, Result, Genemon)"]
     DETECT --> OCR{"OCR エンジン\n利用可能?"}
     OCR -- Yes --> OCR_RUN["run_ocr()\nround_number 付与 (majority vote)\n偽陽性除去\nResultScreenDetector 実行"]
     OCR -- No --> ROUNDTRIP["RoundTrip per-frame チェック\n(Green/Yellow/Red 閾値)"]
@@ -208,6 +208,7 @@ detection-overview.md セクション 1.6 で定義されたトリガーを実�
 | ラウンド完了          | `RoundGone` が持続                                     | 5 秒     | 10 秒                          | 中     | "ラウンド完了"      |
 | 依頼完了(OCR)         | `ResultScreenVisible` 確定                             | 0 秒     | 10 秒                          | 中     | "依頼完了"          |
 | リザルト放置          | `ResultScreenVisible` 確定後に `RoundVisible` が来ない | 0 秒     | `notify_result_idle_threshold` | 中     | "リザルト放置中"    |
+| ジェネモン発見        | `GenemonVisible`                                       | 0 秒     | `notification_cooldown`        | 中     | "ジェネモン発見"    |
 | RoundTrip Green 超過  | RoundTrip 経過 >= Green 閾値                           | 0 秒     | 10 秒                          | 中     | "RoundTrip: Green"  |
 | RoundTrip Yellow 超過 | RoundTrip 経過 >= Yellow 閾値                          | 0 秒     | 10 秒                          | 高     | "RoundTrip: Yellow" |
 | RoundTrip Red 超過    | RoundTrip 経過 >= Red 閾値                             | 0 秒     | 10 秒                          | 高     | "RoundTrip: Red"    |

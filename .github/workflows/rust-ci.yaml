@@ -208,6 +208,29 @@ jobs:
           # shellcheck disable=SC2086
           cargo check ${SCOPE:---all-targets} --target "${TARGET}"
 
+      - name: Install Japanese OCR capability
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $capName = "Language.OCR~~~ja-JP~0.0.1.0"
+          # Caching is not feasible: SoftwareDistribution\Download\ is purged
+          # during installation and WinSxS format cannot be used with -Source.
+          # Each run downloads from Windows Update (~13 min); 30-min timeout applies.
+          if ((Get-WindowsCapability -Online -Name $capName).State -eq "Installed") {
+            Write-Host "OCR already installed, skipping"
+            exit 0
+          }
+          Add-WindowsCapability -Online -Name $capName
+
+      - name: Run dna-capture tests (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euxo pipefail
+          cargo test -p dna-capture --target "${TARGET}"
+
   test:
     name: test
     runs-on: ubuntu-latest

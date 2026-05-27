@@ -1,7 +1,7 @@
 {
 	"cli_toml": "src-tauri/Cargo.toml",
 	"miri_excluded_crates": [],
-	"timeout_minutes": 15,
+	"timeout_minutes": 30,
 	"apt_packages": "libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf",
 	"release_targets": [
 		{ "target": "x86_64-pc-windows-msvc", "os": "windows-latest" }
