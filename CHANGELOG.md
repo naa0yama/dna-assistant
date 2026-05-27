@@ -1,9 +1,13 @@
 # Changelog
 
 ## [v0.1.13](https://github.com/naa0yama/dna-assistant/compare/v0.1.12...v0.1.13) - 2026-05-27
+
 ### Features 🎉
+
 - feat: add GenemonDetector for quest liberation OCR detection by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/199
+
 ### Development Environment 🔧
+
 - chore(deps): update all action update by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/189
 - chore(deps): update dependency jdx/mise to v2026.5.10 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/190
 - chore(deps): update taiki-e/install-action action to v2.78.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/192
