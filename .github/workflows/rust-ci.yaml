@@ -208,13 +208,37 @@ jobs:
           # shellcheck disable=SC2086
           cargo check ${SCOPE:---all-targets} --target "${TARGET}"
 
+      - name: Cache Japanese OCR capability
+        if: matrix.os == 'windows-latest'
+        id: ocr-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/ocr-source
+          key: windows-ocr-ja-jp-${{ runner.arch }}-v1
+
       - name: Install Japanese OCR capability
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $cap = Get-WindowsCapability -Online -Name "Language.OCR~~~ja-JP~0.0.1.0"
-          if ($cap.State -ne "Installed") {
-            Add-WindowsCapability -Online -Name "Language.OCR~~~ja-JP~0.0.1.0"
+          $capName = "Language.OCR~~~ja-JP~0.0.1.0"
+          $sourceDir = "$env:USERPROFILE\ocr-source"
+
+          if ((Get-WindowsCapability -Online -Name $capName).State -eq "Installed") {
+            Write-Host "OCR already installed, skipping"
+            exit 0
+          }
+
+          if (Test-Path "$sourceDir\*.cab") {
+            Write-Host "Installing from cached cab"
+            Add-WindowsCapability -Online -Name $capName -Source $sourceDir -LimitAccess
+          } else {
+            Write-Host "Installing from Windows Update (first run, populating cache)"
+            Add-WindowsCapability -Online -Name $capName
+            New-Item -ItemType Directory -Force $sourceDir | Out-Null
+            $wuCache = "C:\Windows\SoftwareDistribution\Download"
+            Get-ChildItem $wuCache -Recurse -Filter "*.cab" -ErrorAction SilentlyContinue |
+              Copy-Item -Destination $sourceDir -ErrorAction SilentlyContinue
+            Write-Host "Cached $((Get-ChildItem $sourceDir -Filter '*.cab' -ErrorAction SilentlyContinue).Count) cab(s)"
           }
 
       - name: Run dna-capture tests (Windows)
