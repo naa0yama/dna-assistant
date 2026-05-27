@@ -1750,7 +1750,7 @@ mod platform {
 } // mod platform
 
 #[cfg(target_os = "windows")]
-pub use platform::{CaptureInfo, LatestFrame, MonitorState, format_elapsed, start, stop};
+pub use platform::{CaptureInfo, LatestFrame, MonitorState, start, stop};
 
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
