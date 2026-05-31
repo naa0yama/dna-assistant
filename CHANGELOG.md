@@ -1,9 +1,13 @@
 # Changelog
 
 ## [v0.1.14](https://github.com/naa0yama/dna-assistant/compare/v0.1.13...v0.1.14) - 2026-05-31
+
 ### Documentation 🗒️
+
 - test(notification): add unit tests for NotificationManager lifecycle by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/218
+
 ### Development Environment 🔧
+
 - chore(deps): update docker/dockerfile docker tag to v1.24.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/178
 - chore(deps): update taiki-e/install-action action to v2.79.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/205
 - chore(deps): update dependency jdx/mise to v2026.5.13 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/206
