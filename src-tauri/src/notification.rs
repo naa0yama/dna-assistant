@@ -831,12 +831,6 @@ impl NotificationManager {
         self.last_notified.contains_key(&kind)
     }
 
-    /// Test accessor: whether a condition is being tracked.
-    #[cfg(test)]
-    pub(crate) fn is_tracking(&self, kind: TriggerKind) -> bool {
-        self.condition_start.contains_key(&kind)
-    }
-
     /// Test accessor: repeat count for `CaptureLost`.
     #[cfg(test)]
     pub(crate) fn capture_lost_count(&self) -> u32 {
