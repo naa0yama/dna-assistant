@@ -22,7 +22,7 @@ const DISCORD_IMAGE_MAX_BYTES: usize = 6 * 1024 * 1024;
 
 /// Notification trigger kind, used as key for cooldown tracking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum TriggerKind {
+pub(crate) enum TriggerKind {
     DialogVisible,
     RoundGone,
     ResultScreen,
@@ -119,7 +119,10 @@ fn build_http_client() -> reqwest::blocking::Client {
         .use_rustls_tls()
         .timeout(Duration::from_secs(30))
         .build()
-        .unwrap_or_else(|_| reqwest::blocking::Client::new())
+        .unwrap_or_else(|e| {
+            warn!(%e, "failed to build rustls HTTP client, falling back to default");
+            reqwest::blocking::Client::new()
+        })
 }
 
 /// Manages notification triggers with sustain-time and cooldown logic.
@@ -140,6 +143,10 @@ pub struct NotificationManager {
     capture_lost_repeat_count: u32,
     /// How many times `ResultIdle` has repeated.
     result_idle_repeat_count: u32,
+    /// How many times `DialogVisible` has fired this occurrence.
+    dialog_visible_repeat_count: u32,
+    /// How many times `GenemonVisible` has fired this occurrence.
+    genemon_visible_repeat_count: u32,
     /// Current round number (set externally from monitor loop).
     current_round: Option<u32>,
     /// Latest captured frame for Discord screenshot attachment.
@@ -161,6 +168,8 @@ impl NotificationManager {
             roundtrip_repeat_count: 0,
             capture_lost_repeat_count: 0,
             result_idle_repeat_count: 0,
+            dialog_visible_repeat_count: 0,
+            genemon_visible_repeat_count: 0,
             current_round: None,
             latest_frame: None,
             config: config.clone(),
@@ -393,8 +402,18 @@ impl NotificationManager {
     }
 
     /// Clear a condition when the opposite event is received.
+    ///
+    /// Resets the repeat counter and last-notified time for dialog/genemon so
+    /// a fresh occurrence after dismissal is not blocked by the previous cooldown.
     fn clear_condition(&mut self, kind: TriggerKind) {
         self.condition_start.remove(&kind);
+        if matches!(
+            kind,
+            TriggerKind::DialogVisible | TriggerKind::GenemonVisible
+        ) {
+            self.reset_repeat_count(kind);
+            self.last_notified.remove(&kind);
+        }
     }
 
     /// Check if a specific trigger kind is enabled via config toggles.
@@ -479,6 +498,39 @@ impl NotificationManager {
         }
     }
 
+    /// Return the current repeat count for a condition-tracked trigger kind.
+    const fn repeat_count_for(&self, kind: TriggerKind) -> u32 {
+        match kind {
+            TriggerKind::DialogVisible => self.dialog_visible_repeat_count,
+            TriggerKind::GenemonVisible => self.genemon_visible_repeat_count,
+            _ => 0,
+        }
+    }
+
+    /// Increment the repeat counter for a condition-tracked trigger kind.
+    fn increment_repeat_count(&mut self, kind: TriggerKind) {
+        match kind {
+            TriggerKind::DialogVisible => {
+                self.dialog_visible_repeat_count =
+                    self.dialog_visible_repeat_count.saturating_add(1);
+            }
+            TriggerKind::GenemonVisible => {
+                self.genemon_visible_repeat_count =
+                    self.genemon_visible_repeat_count.saturating_add(1);
+            }
+            _ => {}
+        }
+    }
+
+    /// Reset the repeat counter for a condition-tracked trigger kind.
+    fn reset_repeat_count(&mut self, kind: TriggerKind) {
+        match kind {
+            TriggerKind::DialogVisible => self.dialog_visible_repeat_count = 0,
+            TriggerKind::GenemonVisible => self.genemon_visible_repeat_count = 0,
+            _ => {}
+        }
+    }
+
     /// Check if a condition has been sustained long enough and send notification.
     fn check_and_notify(&mut self, kind: TriggerKind, now: Instant) {
         let Some(&start) = self.condition_start.get(&kind) else {
@@ -486,6 +538,20 @@ impl NotificationManager {
         };
 
         if !self.is_trigger_enabled(kind) {
+            return;
+        }
+
+        // Enforce max_repeat for condition-tracked triggers that support it.
+        if matches!(
+            kind,
+            TriggerKind::DialogVisible | TriggerKind::GenemonVisible
+        ) && self.repeat_count_for(kind) >= self.config.notification_max_repeat
+        {
+            debug!(
+                ?kind,
+                max_repeat = self.config.notification_max_repeat,
+                "condition notification suppressed: max repeat reached"
+            );
             return;
         }
 
@@ -521,6 +587,7 @@ impl NotificationManager {
         let mention = matches!(kind, TriggerKind::DialogVisible | TriggerKind::ResultScreen);
         self.send_notification_with_image(tc.title, &body, mention);
         self.last_notified.insert(kind, now);
+        self.increment_repeat_count(kind);
         self.condition_start.remove(&kind);
 
         if kind == TriggerKind::RoundGone {
@@ -694,11 +761,14 @@ impl NotificationManager {
                 }]
             });
 
+            let Ok(payload_str) = serde_json::to_string(&payload_json).inspect_err(|e| {
+                warn!(%e, "failed to serialize Discord multipart payload, skipping");
+            }) else {
+                return;
+            };
+
             let form = reqwest::blocking::multipart::Form::new()
-                .text(
-                    "payload_json",
-                    serde_json::to_string(&payload_json).unwrap_or_default(),
-                )
+                .text("payload_json", payload_str)
                 .part(
                     "files[0]",
                     reqwest::blocking::multipart::Part::bytes(png_bytes)
@@ -743,6 +813,42 @@ impl NotificationManager {
             })
     }
 
+    /// Test accessor: repeat count for `DialogVisible`.
+    #[cfg(test)]
+    pub(crate) fn dialog_repeat_count(&self) -> u32 {
+        self.dialog_visible_repeat_count
+    }
+
+    /// Test accessor: repeat count for `GenemonVisible`.
+    #[cfg(test)]
+    pub(crate) fn genemon_repeat_count(&self) -> u32 {
+        self.genemon_visible_repeat_count
+    }
+
+    /// Test accessor: whether a trigger was last-notified.
+    #[cfg(test)]
+    pub(crate) fn was_notified(&self, kind: TriggerKind) -> bool {
+        self.last_notified.contains_key(&kind)
+    }
+
+    /// Test accessor: whether a condition is being tracked.
+    #[cfg(test)]
+    pub(crate) fn is_tracking(&self, kind: TriggerKind) -> bool {
+        self.condition_start.contains_key(&kind)
+    }
+
+    /// Test accessor: repeat count for `CaptureLost`.
+    #[cfg(test)]
+    pub(crate) fn capture_lost_count(&self) -> u32 {
+        self.capture_lost_repeat_count
+    }
+
+    /// Test accessor: repeat count for `ResultIdle`.
+    #[cfg(test)]
+    pub(crate) fn result_idle_count(&self) -> u32 {
+        self.result_idle_repeat_count
+    }
+
     fn send_toast(title: &str, body: &str) {
         debug!(title, body, "sending toast notification");
 
@@ -767,5 +873,251 @@ impl NotificationManager {
         if let Err(e) = result {
             warn!(%e, "failed to send toast notification");
         }
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use std::time::Duration;
+
+    use dna_detector::event::DetectionEvent;
+
+    use super::*;
+    use crate::monitor::MonitorConfig;
+
+    fn test_config_zero() -> MonitorConfig {
+        MonitorConfig {
+            notify_dialog_sustain: Duration::ZERO,
+            notify_round_sustain: Duration::ZERO,
+            notify_dialog_enabled: true,
+            notify_round_enabled: true,
+            notify_genemon_enabled: true,
+            notify_capture_lost_enabled: true,
+            notify_result_idle_enabled: true,
+            notifications_enabled: true,
+            notification_max_repeat: 3,
+            notification_cooldown: Duration::ZERO,
+            notify_round_cooldown: Duration::ZERO,
+            desktop_enabled: false,
+            discord_enabled: false,
+            ..Default::default()
+        }
+    }
+
+    fn test_config_with_cooldown(cooldown: Duration) -> MonitorConfig {
+        MonitorConfig {
+            notification_cooldown: cooldown,
+            ..test_config_zero()
+        }
+    }
+
+    fn new_mgr(cfg: &MonitorConfig) -> NotificationManager {
+        NotificationManager::new(cfg)
+    }
+
+    fn dialog_visible() -> DetectionEvent {
+        DetectionEvent::DialogVisible {
+            text_ratio: 0.5,
+            bg_dark_ratio: 0.5,
+            timestamp: std::time::Instant::now(),
+        }
+    }
+
+    fn dialog_gone() -> DetectionEvent {
+        DetectionEvent::DialogGone {
+            text_ratio: 0.0,
+            bg_dark_ratio: 0.0,
+            timestamp: std::time::Instant::now(),
+        }
+    }
+
+    fn genemon_visible() -> DetectionEvent {
+        DetectionEvent::GenemonVisible {
+            timestamp: std::time::Instant::now(),
+        }
+    }
+
+    fn genemon_gone() -> DetectionEvent {
+        DetectionEvent::GenemonGone {
+            timestamp: std::time::Instant::now(),
+        }
+    }
+
+    fn round_visible() -> DetectionEvent {
+        DetectionEvent::RoundVisible {
+            text_present: true,
+            white_ratio: 0.5,
+            round_number: Some(1),
+        }
+    }
+
+    fn round_gone() -> DetectionEvent {
+        DetectionEvent::RoundGone {
+            white_ratio: 0.0,
+            timestamp: std::time::Instant::now(),
+        }
+    }
+
+    // ── DialogVisible lifecycle ──────────────────────────────────────────────
+
+    #[test]
+    fn dialog_fires_up_to_max_repeat() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        for _ in 0..cfg.notification_max_repeat {
+            mgr.process_events(&[dialog_visible()]);
+        }
+        assert_eq!(mgr.dialog_repeat_count(), cfg.notification_max_repeat);
+    }
+
+    #[test]
+    fn dialog_stops_after_max_repeat() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        for _ in 0..=cfg.notification_max_repeat {
+            mgr.process_events(&[dialog_visible()]);
+        }
+        assert_eq!(mgr.dialog_repeat_count(), cfg.notification_max_repeat);
+    }
+
+    #[test]
+    fn dialog_resets_on_gone() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        for _ in 0..cfg.notification_max_repeat {
+            mgr.process_events(&[dialog_visible()]);
+        }
+        mgr.process_events(&[dialog_gone()]);
+        assert_eq!(mgr.dialog_repeat_count(), 0);
+        // After reset, fires again
+        mgr.process_events(&[dialog_visible()]);
+        assert_eq!(mgr.dialog_repeat_count(), 1);
+    }
+
+    #[test]
+    fn dialog_cooldown_suppresses_repeat() {
+        let cfg = test_config_with_cooldown(Duration::from_secs(3600));
+        let mut mgr = new_mgr(&cfg);
+        mgr.process_events(&[dialog_visible()]);
+        assert_eq!(mgr.dialog_repeat_count(), 1);
+        // Second call within cooldown must not fire again
+        mgr.process_events(&[dialog_visible()]);
+        assert_eq!(mgr.dialog_repeat_count(), 1);
+    }
+
+    #[test]
+    fn dialog_sustain_blocks_premature_fire() {
+        let cfg = MonitorConfig {
+            notify_dialog_sustain: Duration::from_secs(3600),
+            ..test_config_zero()
+        };
+        let mut mgr = new_mgr(&cfg);
+        mgr.process_events(&[dialog_visible()]);
+        assert!(!mgr.was_notified(TriggerKind::DialogVisible));
+    }
+
+    // ── GenemonVisible lifecycle ─────────────────────────────────────────────
+
+    #[test]
+    fn genemon_fires_up_to_max_repeat() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        for _ in 0..cfg.notification_max_repeat {
+            mgr.process_events(&[genemon_visible()]);
+        }
+        assert_eq!(mgr.genemon_repeat_count(), cfg.notification_max_repeat);
+    }
+
+    #[test]
+    fn genemon_resets_on_gone() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        for _ in 0..cfg.notification_max_repeat {
+            mgr.process_events(&[genemon_visible()]);
+        }
+        mgr.process_events(&[genemon_gone()]);
+        assert_eq!(mgr.genemon_repeat_count(), 0);
+        mgr.process_events(&[genemon_visible()]);
+        assert_eq!(mgr.genemon_repeat_count(), 1);
+    }
+
+    // ── RoundGone lifecycle ──────────────────────────────────────────────────
+
+    #[test]
+    fn round_gone_suppressed_before_round_visible() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        mgr.process_events(&[round_gone()]);
+        assert!(!mgr.was_notified(TriggerKind::RoundGone));
+    }
+
+    #[test]
+    fn round_gone_fires_after_round_visible() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        mgr.process_events(&[round_visible()]);
+        mgr.process_events(&[round_gone()]);
+        assert!(mgr.was_notified(TriggerKind::RoundGone));
+    }
+
+    #[test]
+    fn round_gone_fires_once_per_round() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        mgr.process_events(&[round_visible()]);
+        mgr.process_events(&[round_gone()]);
+        assert!(mgr.was_notified(TriggerKind::RoundGone));
+        // Second RoundGone: already notified for this round, must not re-fire
+        mgr.process_events(&[round_gone()]);
+        // round_notified stays true, was_notified key should still be present
+        assert!(mgr.was_notified(TriggerKind::RoundGone));
+    }
+
+    #[test]
+    fn round_visible_resets_for_next_round() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        mgr.process_events(&[round_visible()]);
+        mgr.process_events(&[round_gone()]);
+        // New round starts
+        mgr.process_events(&[round_visible()]);
+        mgr.process_events(&[round_gone()]);
+        assert!(mgr.was_notified(TriggerKind::RoundGone));
+    }
+
+    // ── CaptureLost ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn capture_lost_max_repeat() {
+        let cfg = test_config_zero();
+        let mut mgr = new_mgr(&cfg);
+        for _ in 0..=cfg.notification_max_repeat {
+            mgr.notify_capture_lost();
+        }
+        assert_eq!(mgr.capture_lost_count(), cfg.notification_max_repeat);
+        mgr.reset_capture_lost();
+        assert_eq!(mgr.capture_lost_count(), 0);
+    }
+
+    // ── ResultIdle ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn result_idle_threshold_and_max_repeat() {
+        let cfg = MonitorConfig {
+            notify_result_idle_threshold: Duration::from_secs(5),
+            ..test_config_zero()
+        };
+        let mut mgr = new_mgr(&cfg);
+        // Below threshold: no fire
+        mgr.notify_result_idle(Duration::from_secs(4));
+        assert_eq!(mgr.result_idle_count(), 0);
+        // At threshold: fires
+        mgr.notify_result_idle(Duration::from_secs(5));
+        assert_eq!(mgr.result_idle_count(), 1);
+        // Exceeds max_repeat: stops
+        for _ in 0..cfg.notification_max_repeat {
+            mgr.notify_result_idle(Duration::from_secs(5));
+        }
+        assert_eq!(mgr.result_idle_count(), cfg.notification_max_repeat);
     }
 }
