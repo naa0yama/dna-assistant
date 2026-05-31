@@ -39,6 +39,18 @@ pub desktop_enabled: bool,
 - `send_notification_with_image()` — 通常の検知通知 (RoundGone, Dialog 等)
 - `send_toast_and_discord()` — CaptureLost 専用、同じ独立ディスパッチ方式
 
+## Repeat Limiting (DialogVisible / GenemonVisible)
+
+`DialogVisible` と `GenemonVisible` は条件継続中に繰り返し発火する。
+無限通知を防ぐため `notification_max_repeat` で上限を設ける。
+
+- 1 occurrence (出現〜消滅) の間に発火できる回数は `notification_max_repeat` まで。
+- `DialogGone` / `GenemonGone` を受信すると `clear_condition` がカウンタをゼロにリセットし、
+  次の occurrence では再び `max_repeat` 回まで発火できる。
+- `notification_cooldown` が 0 より大きい場合、cooldown 期間中はさらに発火を抑制する。
+- `notify_dialog_sustain` / `notify_round_sustain` (sustain) が 0 より大きい場合、
+  出現から sustain 経過後に初回発火する。
+
 ## Non-Goals
 
 - Slack / LINE 等の第三チャンネル
