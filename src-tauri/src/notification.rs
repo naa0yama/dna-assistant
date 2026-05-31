@@ -948,6 +948,7 @@ mod tests {
             text_present: true,
             white_ratio: 0.5,
             round_number: Some(1),
+            timestamp: std::time::Instant::now(),
         }
     }
 
