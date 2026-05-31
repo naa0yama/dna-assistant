@@ -1,5 +1,28 @@
 # Changelog
 
+## [v0.1.14](https://github.com/naa0yama/dna-assistant/compare/v0.1.13...v0.1.14) - 2026-05-31
+
+### Documentation 🗒️
+
+- test(notification): add unit tests for NotificationManager lifecycle by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/218
+
+### Development Environment 🔧
+
+- chore(deps): update docker/dockerfile docker tag to v1.24.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/178
+- chore(deps): update taiki-e/install-action action to v2.79.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/205
+- chore(deps): update dependency jdx/mise to v2026.5.13 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/206
+- chore(deps): update dependency openobserve/openobserve to v0.90.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/207
+- chore(deps): update dependency github:rust-secure-code/cargo-auditable to v0.7.5 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/208
+- chore(deps): update taiki-e/install-action action to v2.79.4 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/209
+- chore(deps): update dependency aqua:embarkstudios/cargo-deny to v0.19.7 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/210
+- chore(deps): update dependency github:naa0yama/graft to v0.5.7 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/211
+- chore(deps): update all action update by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/212
+- chore(deps): update dependency openobserve/openobserve to v0.90.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/214
+- chore(deps): update dependency jdx/mise to v2026.5.14 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/213
+- chore(deps): update taiki-e/install-action action to v2.79.5 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/215
+- chore(deps): update dependency jdx/mise to v2026.5.15 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/216
+- chore(deps): update taiki-e/install-action action to v2.79.6 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/217
+
 ## [v0.1.13](https://github.com/naa0yama/dna-assistant/compare/v0.1.12...v0.1.13) - 2026-05-27
 
 ### Features 🎉
