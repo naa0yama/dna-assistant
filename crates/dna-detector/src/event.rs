@@ -2,6 +2,8 @@
 
 use std::time::Instant;
 
+use crate::round_number::StageKind;
+
 /// Events produced by analyzing game frames.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
@@ -14,6 +16,8 @@ pub enum DetectionEvent {
         white_ratio: f64,
         /// OCR-recognized round number (None if OCR unavailable or failed).
         round_number: Option<u32>,
+        /// Stage kind extracted from OCR text (None until OCR runs).
+        stage_kind: Option<StageKind>,
         /// When this was detected.
         timestamp: Instant,
     },

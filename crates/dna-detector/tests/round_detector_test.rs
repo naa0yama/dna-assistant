@@ -95,6 +95,24 @@ fn mask_round_visible_1600x900() {
     }
 }
 
+// ── Fixture mask + crop ─────────────────────────────────────────────
+
+#[cfg_attr(miri, ignore)]
+#[test]
+#[ignore = "generates ROI crops for visual inspection"]
+fn mask_round_visible_guard_1600x900() {
+    let config = default_round_config();
+    let raw = load_fixture("visible_guard_1600x900.png");
+
+    let masked = mask_fixture(&raw, &[&config.roi]);
+    save_fixture("visible_guard_1600x900.png", &masked);
+
+    let game = crop_titlebar(&masked);
+    if let Some(crop) = config.roi.crop(&game) {
+        save_fixture("roi_guard_1600x900.png", &crop);
+    }
+}
+
 // ── Detection tests ─────────────────────────────────────────────────
 
 #[cfg_attr(miri, ignore)]
@@ -106,5 +124,17 @@ fn visible_1600x900_detected() {
     assert!(
         is_visible(&detector.analyze(&game)),
         "expected RoundVisible for post-update 1600x900 frame"
+    );
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn visible_guard_1600x900_detected() {
+    let detector = RoundDetector::new(default_round_config());
+    let raw = load_fixture("visible_guard_1600x900.png");
+    let game = crop_titlebar(&raw);
+    assert!(
+        is_visible(&detector.analyze(&game)),
+        "expected RoundVisible for Guard stage 1600x900 frame"
     );
 }

@@ -42,19 +42,20 @@ flowchart LR
 
 ### モジュール構成(`dna-detector`)
 
-| モジュール          | 責務                                                       |
-| ------------------- | ---------------------------------------------------------- |
-| `detector::round`   | `RoundDetector` — ラウンドテキスト有無の検出               |
-| `detector::dialog`  | `DialogDetector` — ダイアログボックス(通信エラー等)の検出  |
-| `detector::result`  | `ResultScreenDetector` — リザルト画面の OCR 検出           |
-| `detector::genemon` | `GenemonDetector` — ジェネモン解放クエストの OCR 検出      |
-| `ocr`               | `OcrEngine` トレイト — プラットフォーム非依存 OCR 抽象化   |
-| `state`             | `DebouncedDetector` — 一過性状態変化の抑制ラッパー         |
-| `config`            | `DetectionConfig` — 全 Detector の設定型                   |
-| `event`             | `DetectionEvent` — 検出イベント enum                       |
-| `roi`               | `RoiDefinition` / `PixelRect` — 比率ベース ROI             |
-| `color`             | `Hsv` / `HsvRange` / `rgb_to_hsv()` — 色空間ユーティリティ |
-| `titlebar`          | `crop_titlebar()` — タイトルバー検出・除去                 |
+| モジュール          | 責務                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `detector::round`   | `RoundDetector` — ラウンドテキスト有無の検出                                                                      |
+| `detector::dialog`  | `DialogDetector` — ダイアログボックス(通信エラー等)の検出                                                         |
+| `detector::result`  | `ResultScreenDetector` — リザルト画面の OCR 検出                                                                  |
+| `detector::genemon` | `GenemonDetector` — ジェネモン解放クエストの OCR 検出                                                             |
+| `ocr`               | `OcrEngine` トレイト — プラットフォーム非依存 OCR 抽象化                                                          |
+| `state`             | `DebouncedDetector` — 一過性状態変化の抑制ラッパー                                                                |
+| `config`            | `DetectionConfig` — 全 Detector の設定型                                                                          |
+| `event`             | `DetectionEvent` — 検出イベント enum                                                                              |
+| `roi`               | `RoiDefinition` / `PixelRect` — 比率ベース ROI                                                                    |
+| `color`             | `Hsv` / `HsvRange` / `rgb_to_hsv()` — 色空間ユーティリティ                                                        |
+| `titlebar`          | `crop_titlebar()` — タイトルバー検出・除去                                                                        |
+| `round_number`      | `parse_round_number()` / `parse_stage_kind()` / `StageKind` enum — OCR テキストからラウンド番号・ステージ種別抽出 |
 
 ## 1.3 検出パイプライン
 
@@ -80,7 +81,7 @@ flowchart TD
     RESULT --> EVENTS
     GENEMON --> EVENTS
     EVENTS --> OCR{"OCR エンジン\n利用可能?"}
-    OCR -- Yes --> OCR_ENRICH["OCR 補正\n(round_number 付与,\n偽陽性除去)"]
+    OCR -- Yes --> OCR_ENRICH["OCR 補正\n(round_number + stage_kind 付与,\n偽陽性除去)"]
     OCR -- No --> TRANSITION["TransitionFilter\n状態遷移フィルタ"]
     OCR_ENRICH --> TRANSITION
 ```
@@ -120,11 +121,11 @@ ROI 切り出し失敗時(フレームサイズが極端に小さい場合)は�
 
 | 項目     | 内容                                                                                                        |
 | -------- | ----------------------------------------------------------------------------------------------------------- |
-| 目的     | "探検 現在のラウンド：XX" テキストの有無を検出                                                              |
+| 目的     | "探検 現在のラウンド：XX" / "ガード 現在のラウンド：XX" テキストの有無を検出                                |
 | 方式     | 高輝度(`>= 140`) + 低彩度(`< 60`)ピクセル密度 + 左端 1/4 最大輝度確認(`>= 200`)の 3 条件                    |
 | ROI      | `x=0.0, y=0.25, w=0.237, h=0.10`                                                                            |
-| イベント | `RoundVisible { round_number: Option<u32> }` / `RoundGone`                                                  |
-| 用途     | ラウンド開始/終了の遷移検出。OCR 利用可能時は `round_number` にラウンド番号を付与                           |
+| イベント | `RoundVisible { round_number: Option<u32>, stage_kind: Option<StageKind> }` / `RoundGone`                   |
+| 用途     | ラウンド開始/終了の遷移検出。OCR 利用可能時は `round_number` + `stage_kind` を付与                          |
 | 制限     | ピクセル検出のみではラウンド番号の読み取り不可(OCR で補完)、リザルト画面と他の GONE 状態の区別は OCR で対応 |
 
 ### DialogDetector
@@ -160,7 +161,7 @@ flowchart TD
     OCR -- Yes --> ENRICH["OCR 補正・ゲーティング\n(src-tauri monitor loop)"]
     OCR -- Yes --> GENEMON_DET["GenemonDetector\nOCR 直接検出(毎フレーム)"]
     OCR -- No --> NOTIFY["通知判定"]
-    ENRICH --> ENRICHED["補正済みイベント\nRoundVisible + round_number\nResultScreenVisible / ResultScreenGone\nDialogVisible 偽陽性除去"]
+    ENRICH --> ENRICHED["補正済みイベント\nRoundVisible + round_number + stage_kind\nResultScreenVisible / ResultScreenGone\nDialogVisible 偽陽性除去"]
     GENEMON_DET --> GENEMON_EV["GenemonVisible / GenemonGone"]
     ENRICHED --> NOTIFY
     GENEMON_EV --> NOTIFY
@@ -172,7 +173,7 @@ flowchart TD
 
 | トリガー               | OCR ROI                                                   | 処理                                                                                                             | ステータス |
 | ---------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------- |
-| `RoundVisible`         | `det_config.round.roi` (`x=0.0, y=0.25, w=0.237, h=0.10`) | "ラウンド" テキスト確認 → `round_number` 付与。未検出時は `RoundGone` に置換(偽陽性除去)                         | 実装済み   |
+| `RoundVisible`         | `det_config.round.roi` (`x=0.0, y=0.25, w=0.237, h=0.10`) | "ラウンド" テキスト確認 → `round_number` + `stage_kind` 付与。未検出時は `RoundGone` に置換(偽陽性除去)          | 実装済み   |
 | `ResultScreenDetector` | `x=0.85, y=0.93, w=0.15, h=0.07` (右下フッター)           | "依頼終了" テキスト検出 → `ResultScreenVisible` / `ResultScreenGone` 発行                                        | 実装済み   |
 | `DialogVisible`        | `x=0.25, y=0.35, w=0.50, h=0.20`                          | "Tips" テキスト確認。未検出時は `DialogGone` に置換(偽陽性除去)                                                  | 実装済み   |
 | `GenemonDetector`      | `x=0.00, y=0.43, w=0.25, h=0.08` (クエストログ左側)       | "ジェネモン" / "解放" テキスト検出 → `GenemonVisible` / `GenemonGone` 発行(ピクセル前段なし、毎フレーム直接 OCR) | 実装済み   |
@@ -186,29 +187,30 @@ flowchart TD
 
 ### ピクセル検出と OCR の責務境界
 
-| 検出対象               | ピクセル検出            | OCR 補正                                                                 | ステータス |
-| ---------------------- | ----------------------- | ------------------------------------------------------------------------ | ---------- |
-| ラウンドテキスト有無   | `RoundDetector` で検出  | "ラウンド" 未検出時に偽陽性除去                                          | 実装済み   |
-| ラウンド番号           | 検出不可                | OCR で数値抽出 → `round_number` に付与 (majority vote)                   | 実装済み   |
-| リザルト画面           | —                       | `ResultScreenDetector` が "依頼終了" ROI (右下フッター) で OCR 検出      | 実装済み   |
-| ダイアログ表示         | `DialogDetector` で検出 | "Tips" 未検出時に偽陽性除去                                              | 実装済み   |
-| ジェネモン解放クエスト | 検出不可                | `GenemonDetector` がクエスト ROI で "ジェネモン"/"解放" を毎フレーム検出 | 実装済み   |
-| 自動周回状態           | 検出不可                | OCR でテキスト認識(未実装)                                               | 未実装     |
+| 検出対象               | ピクセル検出            | OCR 補正                                                                                      | ステータス |
+| ---------------------- | ----------------------- | --------------------------------------------------------------------------------------------- | ---------- |
+| ラウンドテキスト有無   | `RoundDetector` で検出  | "ラウンド" 未検出時に偽陽性除去                                                               | 実装済み   |
+| ラウンド番号           | 検出不可                | OCR で数値抽出 → `round_number` に付与 (majority vote)                                        | 実装済み   |
+| ステージ種別           | 検出不可                | OCR テキストから `parse_stage_kind()` → `stage_kind` に付与 (`Guard`/`Exploration`/`Unknown`) | 実装済み   |
+| リザルト画面           | —                       | `ResultScreenDetector` が "依頼終了" ROI (右下フッター) で OCR 検出                           | 実装済み   |
+| ダイアログ表示         | `DialogDetector` で検出 | "Tips" 未検出時に偽陽性除去                                                                   | 実装済み   |
+| ジェネモン解放クエスト | 検出不可                | `GenemonDetector` がクエスト ROI で "ジェネモン"/"解放" を毎フレーム検出                      | 実装済み   |
+| 自動周回状態           | 検出不可                | OCR でテキスト認識(未実装)                                                                    | 未実装     |
 
 ## 1.6 通知戦略(`src-tauri` — 実装済み)
 
-| トリガー              | 条件                              | 持続時間 | 優先度                  | 検出元                |
-| --------------------- | --------------------------------- | -------- | ----------------------- | --------------------- |
-| ダイアログ表示        | `DialogVisible` が持続            | 3 秒     | **高** — 手動対応が必要 | ピクセル + OCR ゲート |
-| ラウンド完了          | `RoundGone` が持続                | 5 秒     | 中 — 情報通知           | ピクセル              |
-| 依頼完了(OCR)         | `ResultScreenVisible`             | 0 秒     | 中 — 確定的検出         | OCR                   |
-| ジェネモン発見        | `GenemonVisible`                  | 0 秒     | 中 — 情報通知           | OCR(直接)             |
-| RoundTrip Green 超過  | RoundTrip 経過 >= Green 閾値      | 0 秒     | 中 — 情報通知           | タイマー              |
-| RoundTrip Yellow 超過 | RoundTrip 経過 >= Yellow 閾値     | 0 秒     | **高** — 警告           | タイマー              |
-| RoundTrip Red 超過    | RoundTrip 経過 >= Red 閾値        | 0 秒     | **高** — 要対応         | タイマー              |
-| キャプチャ停止        | キャプチャ失敗が sustain 時間持続 | 5 秒     | **高** — 手動確認が必要 | モニターループ        |
-| キャプチャ復帰        | 停止後にフレーム取得成功          | —        | 中 — 情報通知           | モニターループ        |
-| 自動周回終了          | OCR: `"自動周回が終了しました"`   | —        | 中 — 手動再開が必要     | 未実装                |
+| トリガー              | 条件                              | 持続時間                                   | 優先度                  | 検出元                |
+| --------------------- | --------------------------------- | ------------------------------------------ | ----------------------- | --------------------- |
+| ダイアログ表示        | `DialogVisible` が持続            | 3 秒                                       | **高** — 手動対応が必要 | ピクセル + OCR ゲート |
+| ラウンド完了          | `RoundGone` が持続                | 5 秒                                       | 中 — 情報通知           | ピクセル              |
+| 依頼完了(OCR)         | `ResultScreenVisible`             | 0 秒                                       | 中 — 確定的検出         | OCR                   |
+| ジェネモン発見        | `GenemonVisible`                  | `notify_genemon_sustain` (デフォルト 2 秒) | 中 — 情報通知           | OCR(直接)             |
+| RoundTrip Green 超過  | RoundTrip 経過 >= Green 閾値      | 0 秒                                       | 中 — 情報通知           | タイマー              |
+| RoundTrip Yellow 超過 | RoundTrip 経過 >= Yellow 閾値     | 0 秒                                       | **高** — 警告           | タイマー              |
+| RoundTrip Red 超過    | RoundTrip 経過 >= Red 閾値        | 0 秒                                       | **高** — 要対応         | タイマー              |
+| キャプチャ停止        | キャプチャ失敗が sustain 時間持続 | 5 秒                                       | **高** — 手動確認が必要 | モニターループ        |
+| キャプチャ復帰        | 停止後にフレーム取得成功          | —                                          | 中 — 情報通知           | モニターループ        |
+| 自動周回終了          | OCR: `"自動周回が終了しました"`   | —                                          | 中 — 手動再開が必要     | 未実装                |
 
 ## 1.7 イベント型
 
@@ -217,7 +219,7 @@ flowchart TD
 ```rust
 pub enum DetectionEvent {
     // Round detector (pixel-based, OCR-enriched round_number)
-    RoundVisible { text_present: bool, white_ratio: f64, round_number: Option<u32>, timestamp: Instant },
+    RoundVisible { text_present: bool, white_ratio: f64, round_number: Option<u32>, stage_kind: Option<StageKind>, timestamp: Instant },
     RoundGone { white_ratio: f64, timestamp: Instant },
     // Dialog detector (pixel-based, OCR-gated)
     DialogVisible { text_ratio: f64, bg_dark_ratio: f64, timestamp: Instant },
@@ -295,7 +297,7 @@ flowchart TD
 
 - [x] `DebouncedDetector` のユニットテスト追加(4 件追加済み)
 - [x] Phase 2 OCR 検出の `dna-capture` 側インターフェース設計 — `JapaneseOcrEngine` 実装済み
-- [x] `DetectionEvent` の OCR 拡張 — `ResultScreenVisible`, `ResultScreenGone`, `RoundVisible::round_number`, `RoundSelectScreen` 追加済み
+- [x] `DetectionEvent` の OCR 拡張 — `ResultScreenVisible`, `ResultScreenGone`, `RoundVisible::round_number`, `RoundVisible::stage_kind`, `RoundSelectScreen` 追加済み
 - [x] 通知判定ロジック(`src-tauri` 側)の設計 — `NotificationManager` + `TransitionFilter` 実装済み
 - [ ] 複数 Detector の並列実行最適化(現在は逐次処理前提)
 - [ ] 自動周回状態の OCR 検出(未実装)

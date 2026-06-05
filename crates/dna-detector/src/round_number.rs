@@ -7,6 +7,37 @@
 //!
 //! Numbers AFTER "ラウンド終了" (decoration artifacts like `1 い Ⅱ 』`) are ignored.
 
+/// Stage content type detected from round indicator OCR text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StageKind {
+    /// "探検" stage.
+    Exploration,
+    /// "ガード" stage (3-wave structure).
+    Guard,
+    /// Stage type not recognized from OCR text.
+    Unknown,
+}
+
+/// Remove all whitespace from OCR text to normalize spacing artifacts.
+fn strip_ws(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// Parse stage kind from round indicator OCR text.
+///
+/// Normalizes whitespace before matching to handle OCR spacing artifacts.
+#[must_use]
+pub fn parse_stage_kind(text: &str) -> StageKind {
+    let normalized = strip_ws(text);
+    if normalized.contains("ガード") {
+        StageKind::Guard
+    } else if normalized.contains("探検") {
+        StageKind::Exploration
+    } else {
+        StageKind::Unknown
+    }
+}
+
 /// Extract a round number (1-99) from the digits immediately BEFORE "ラウンド".
 ///
 /// Only considers the last 1-2 digit sequence that appears before the
@@ -27,7 +58,7 @@
 /// ```
 #[must_use]
 pub fn parse(text: &str) -> Option<u32> {
-    let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let normalized = strip_ws(text);
 
     // Find "ラウンド" and only look at text before it
     let before = normalized.split("ラウンド").next()?;
@@ -72,7 +103,7 @@ pub fn parse(text: &str) -> Option<u32> {
 /// ```
 #[must_use]
 pub fn parse_select_header(text: &str) -> Option<u32> {
-    let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let normalized = strip_ws(text);
 
     // Find text after "周回中"
     let after = normalized.split("周回中").nth(1)?;
@@ -98,15 +129,13 @@ pub fn parse_select_header(text: &str) -> Option<u32> {
 /// Check if OCR text indicates a round end screen ("ラウンド終了").
 #[must_use]
 pub fn is_round_end_text(text: &str) -> bool {
-    let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-    normalized.contains("ラウンド終了")
+    strip_ws(text).contains("ラウンド終了")
 }
 
 /// Check if OCR text indicates a round selection screen ("自動周回中").
 #[must_use]
 pub fn is_round_select_text(text: &str) -> bool {
-    let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-    normalized.contains("自動周回中")
+    strip_ws(text).contains("自動周回中")
 }
 
 /// Parse a 1-2 digit string as a round number (1-99).
@@ -265,5 +294,31 @@ mod tests {
     #[test]
     fn not_round_select() {
         assert!(!is_round_select_text("01 ラウンド終了"));
+    }
+
+    // --- parse_stage_kind ---
+
+    #[test]
+    fn stage_kind_guard() {
+        assert_eq!(
+            parse_stage_kind("ガード 現在のラウンド：01"),
+            StageKind::Guard
+        );
+        assert_eq!(parse_stage_kind("ガ ー ド"), StageKind::Guard);
+    }
+
+    #[test]
+    fn stage_kind_exploration() {
+        assert_eq!(
+            parse_stage_kind("探検 現在のラウンド：01"),
+            StageKind::Exploration
+        );
+        assert_eq!(parse_stage_kind("探 検"), StageKind::Exploration);
+    }
+
+    #[test]
+    fn stage_kind_unknown() {
+        assert_eq!(parse_stage_kind("ラウンド終了"), StageKind::Unknown);
+        assert_eq!(parse_stage_kind(""), StageKind::Unknown);
     }
 }
