@@ -764,6 +764,9 @@ mod platform {
         let mut current_round: Option<u32> = None;
         let mut current_stage_kind = dna_detector::round_number::StageKind::Unknown;
         let mut round_start: Option<Instant> = None;
+        // Deadline for retrying stage-kind OCR after RoundVisible confirmation.
+        // Set when the confirmation frame has Unknown stage kind; cleared on detection or RoundGone.
+        let mut stage_kind_scan_deadline: Option<Instant> = None;
         // When ResultScreenVisible was confirmed; drives ResultIdle notifications.
         let mut result_idle_start: Option<Instant> = None;
         // Round number votes from OCR frames (cleared on RoundVisible)
@@ -895,6 +898,7 @@ mod platform {
                 {
                     current_round = None;
                     current_stage_kind = dna_detector::round_number::StageKind::Unknown;
+                    stage_kind_scan_deadline = None;
                     round_start = None;
                     result_idle_start = None;
                     result_scanning = false;
@@ -1114,8 +1118,24 @@ mod platform {
 
                         match event {
                             DetectionEvent::RoundVisible { stage_kind, .. } => {
+                                current_stage_kind = dna_detector::round_number::StageKind::Unknown;
                                 if let Some(kind) = stage_kind {
-                                    current_stage_kind = *kind;
+                                    if !matches!(
+                                        kind,
+                                        dna_detector::round_number::StageKind::Unknown
+                                    ) {
+                                        current_stage_kind = *kind;
+                                    }
+                                }
+                                // Schedule retry OCR when stage kind is still unresolved.
+                                if matches!(
+                                    current_stage_kind,
+                                    dna_detector::round_number::StageKind::Unknown
+                                ) {
+                                    stage_kind_scan_deadline =
+                                        Some(Instant::now() + Duration::from_secs(5));
+                                } else {
+                                    stage_kind_scan_deadline = None;
                                 }
                                 if round_start.is_none() {
                                     round_start = Some(Instant::now());
@@ -1137,6 +1157,7 @@ mod platform {
                                 }
                             }
                             DetectionEvent::RoundGone { .. } => {
+                                stage_kind_scan_deadline = None;
                                 // Calculate elapsed time for this round
                                 let elapsed_duration = round_start.map(|s| s.elapsed());
                                 elapsed = elapsed_duration.map(format_elapsed);
@@ -1219,6 +1240,49 @@ mod platform {
                             }
                             round_start = Some(Instant::now());
                         }
+                    }
+                }
+
+                // Stage kind retry: runs every frame while stage kind is unresolved.
+                // Fires after transition_events processing so the deadline set on the
+                // confirmation frame is immediately available.
+                if let Some(deadline) = stage_kind_scan_deadline {
+                    if Instant::now() < deadline
+                        && matches!(
+                            current_stage_kind,
+                            dna_detector::round_number::StageKind::Unknown
+                        )
+                        && let Some(ref ocr_engine) = ocr_engine
+                    {
+                        if let Some(ocr_image) = det_config.round.roi.crop(&game_frame) {
+                            let binarized = dna_capture::ocr::binarize_white_text(
+                                &ocr_image,
+                                OCR_BINARIZE_THRESHOLD,
+                            );
+                            if let Ok(text) = ocr_engine.recognize_text(&binarized) {
+                                let kind = dna_detector::round_number::parse_stage_kind(&text);
+                                debug!(
+                                    stage_kind = ?kind,
+                                    ocr_text = %text,
+                                    "stage kind retry OCR"
+                                );
+                                if let Some(label) = stage_kind_str(kind) {
+                                    current_stage_kind = kind;
+                                    stage_kind_scan_deadline = None;
+                                    let payload = DetectionEventPayload {
+                                        kind: "StageKindUpdate".into(),
+                                        detail: label.to_string(),
+                                        round_number: current_round,
+                                        elapsed_secs: None,
+                                        elapsed: None,
+                                        stage_kind: Some(label.to_string()),
+                                    };
+                                    let _ = app_handle.emit("detection-event", &payload);
+                                }
+                            }
+                        }
+                    } else {
+                        stage_kind_scan_deadline = None;
                     }
                 }
 
@@ -1435,6 +1499,15 @@ mod platform {
         }
     }
 
+    /// Map a `StageKind` to its Japanese display label; returns `None` for `Unknown`.
+    fn stage_kind_str(kind: dna_detector::round_number::StageKind) -> Option<&'static str> {
+        match kind {
+            dna_detector::round_number::StageKind::Exploration => Some("探検"),
+            dna_detector::round_number::StageKind::Guard => Some("ガード"),
+            dna_detector::round_number::StageKind::Unknown => None,
+        }
+    }
+
     /// Return the Japanese stage label for `RoundVisible` events; `None` otherwise or when unknown.
     fn stage_kind_label(
         event: &DetectionEvent,
@@ -1443,11 +1516,7 @@ mod platform {
         if !matches!(event, DetectionEvent::RoundVisible { .. }) {
             return None;
         }
-        match kind {
-            dna_detector::round_number::StageKind::Exploration => Some("探検".to_string()),
-            dna_detector::round_number::StageKind::Guard => Some("ガード".to_string()),
-            dna_detector::round_number::StageKind::Unknown => None,
-        }
+        stage_kind_str(kind).map(str::to_string)
     }
 
     fn event_description(event: &DetectionEvent) -> String {
@@ -1503,7 +1572,9 @@ mod platform {
 
                     if has_round_text {
                         let stage_kind = dna_detector::round_number::parse_stage_kind(&text);
-                        // Enrich RoundVisible with confirmed round number and stage kind
+                        // Enrich RoundVisible with confirmed round number and stage kind.
+                        // Unknown means stage text wasn't in the ROI on this frame;
+                        // leave sk as None so current_stage_kind is not overwritten.
                         for event in raw_events.iter_mut() {
                             if let DetectionEvent::RoundVisible {
                                 round_number,
@@ -1512,7 +1583,12 @@ mod platform {
                             } = event
                             {
                                 *round_number = round_num;
-                                *sk = Some(stage_kind);
+                                if !matches!(
+                                    stage_kind,
+                                    dna_detector::round_number::StageKind::Unknown
+                                ) {
+                                    *sk = Some(stage_kind);
+                                }
                             }
                         }
                     } else {
