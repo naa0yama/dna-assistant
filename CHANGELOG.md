@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.1.15](https://github.com/naa0yama/dna-assistant/compare/v0.1.14...v0.1.15) - 2026-06-05
+### Development Environment 🔧
+- chore(deps): update taiki-e/install-action action to v2.79.7 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/219
+- chore(deps): update taiki-e/install-action action to v2.79.8 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/221
+- chore(deps): update dependency openobserve/openobserve to v0.90.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/223
+- chore(deps): update all action update to v2.79.9 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/224
+- chore(deps): update all action update to v2.79.10 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/226
+- chore(deps): update all action update to v2.79.11 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/228
+- chore(deps): update all action update to v2.79.12 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/230
+- chore(deps): update dependency aqua:embarkstudios/cargo-deny to v0.19.8 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/231
+- chore(deps): update mise to v2026.5.16 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/232
+
 ## [v0.1.14](https://github.com/naa0yama/dna-assistant/compare/v0.1.13...v0.1.14) - 2026-05-31
 
 ### Documentation 🗒️
