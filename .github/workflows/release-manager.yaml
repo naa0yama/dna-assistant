@@ -115,7 +115,7 @@ jobs:
           # Step 1: Read current version from main
           CURRENT=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 
-          # Guard against crates with their own version declarations
+          # Guard: only workspace-inherited versions are supported
           violators=$(find crates -name Cargo.toml -exec grep -l '^version = "' {} \; 2>/dev/null || true)
           if [ -n "${violators}" ]; then
             echo "::error::release-manager only supports workspace-inherited versions."
@@ -157,9 +157,11 @@ jobs:
                      --jq '.tag_name' 2>/dev/null || echo "")
 
           # Step 6: Generate changelog via GitHub Release Notes API
+          PREV_TAG_ARG=()
+          [ -n "${PREV_TAG}" ] && PREV_TAG_ARG=(-f "previous_tag_name=${PREV_TAG}")
           CHANGELOG=$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
             -f "tag_name=v${NEXT}" \
-            -f "previous_tag_name=${PREV_TAG}" \
+            "${PREV_TAG_ARG[@]}" \
             --jq '.body')
 
           # Write changelog to file for safe multiline handoff
