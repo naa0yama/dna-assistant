@@ -324,6 +324,12 @@ let ll   = "fe80::1";      // link-local
 
 承認済み範囲: `2001:db8::/32`, `::1`, `fe80::/10`, `::`
 
+誤検知除外 (IPv6 ではないが検出パターンに一致する):
+
+- datetime `HH:MM:SS` / `Tnn:nn:nn` (ISO 8601、ログタイムスタンプ)
+- MAC 風 hex トリプレット `aa:bb:cc` (OUI プレフィックス等)
+- ffmpeg `scale=W:H` フィルタ (例: `scale=1920:1080`)
+
 ---
 
 ### no-real-asn
