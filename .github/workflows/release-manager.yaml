@@ -147,8 +147,9 @@ jobs:
           echo "CURRENT=${CURRENT}" >> "$GITHUB_ENV"
           echo "NEXT=${NEXT}"       >> "$GITHUB_ENV"
 
-          # Step 4: Bump version in Cargo.toml and update lockfile (workspace members only)
+          # Step 4: Bump version in Cargo.toml, tauri.conf.json, and update lockfile (workspace members only)
           sed -i "s/^version = \"${CURRENT}\"/version = \"${NEXT}\"/" Cargo.toml
+          sed -i "s/\"version\": \"${CURRENT}\"/\"version\": \"${NEXT}\"/" src-tauri/tauri.conf.json
           cargo update --workspace
 
           # Step 5: Find previous tag via REST API (avoids git history depth issues)
@@ -184,7 +185,7 @@ jobs:
             const fs = require('fs');
 
             // 1. Upload each modified file as an independent blob (100 MB limit each)
-            const filePaths = ['Cargo.toml', 'Cargo.lock', 'CHANGELOG.md'];
+            const filePaths = ['Cargo.toml', 'Cargo.lock', 'CHANGELOG.md', 'src-tauri/tauri.conf.json'];
             const blobs = await Promise.all(filePaths.map(async (filePath) => {
               const { data } = await github.rest.git.createBlob({
                 ...context.repo,

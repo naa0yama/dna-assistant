@@ -461,6 +461,8 @@ pub struct DetectionEventPayload {
     pub elapsed: Option<String>,
     /// Elapsed time in seconds (for frontend threshold comparison).
     pub elapsed_secs: Option<f64>,
+    /// Stage kind label for RoundVisible events ("探検" / "ガード"); None when unknown.
+    pub stage_kind: Option<String>,
 }
 
 // --- Windows-only: monitor loop, TransitionFilter, and helpers ---
@@ -1205,6 +1207,7 @@ mod platform {
                             round_number: current_round,
                             elapsed_secs: elapsed_duration.map(|d| d.as_secs_f64()),
                             elapsed,
+                            stage_kind: stage_kind_label(event, current_stage_kind),
                         };
                         let _ = app_handle.emit("detection-event", &payload);
 
@@ -1432,7 +1435,21 @@ mod platform {
         }
     }
 
-    /// Get a human-readable description for a detection event.
+    /// Return the Japanese stage label for `RoundVisible` events; `None` otherwise or when unknown.
+    fn stage_kind_label(
+        event: &DetectionEvent,
+        kind: dna_detector::round_number::StageKind,
+    ) -> Option<String> {
+        if !matches!(event, DetectionEvent::RoundVisible { .. }) {
+            return None;
+        }
+        match kind {
+            dna_detector::round_number::StageKind::Exploration => Some("探検".to_string()),
+            dna_detector::round_number::StageKind::Guard => Some("ガード".to_string()),
+            dna_detector::round_number::StageKind::Unknown => None,
+        }
+    }
+
     fn event_description(event: &DetectionEvent) -> String {
         match event {
             DetectionEvent::RoundVisible { .. } => String::from("ラウンド進行中"),
