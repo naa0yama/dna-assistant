@@ -251,9 +251,9 @@ Detector → [OCR 補正] → NotificationManager(持続時間判定) → Toast
 │  [ Stop Monitoring  ]      │
 ├────────────────────────────┤
 │  [Event Log Card]          │
-│  12:34:56 SkillGreyed      │
-│  12:34:50 RoundVisible     │
-│  12:34:48 DialogGone       │
+│  T12:34:56 SkillGreyed     │
+│  T12:34:50 RoundVisible    │
+│  T12:34:48 DialogGone      │
 │  ...                       │
 └────────────────────────────┘
 ```
