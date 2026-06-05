@@ -4,6 +4,20 @@
 
 ### Features 🎉
 
+- feat(monitor): surface stage kind in round badge by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/237
+
+### Bug Fixes 🐌
+
+- fix: improve testdata detection and release-manager fixes by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/239
+
+**Full Changelog**: https://github.com/naa0yama/dna-assistant/compare/v0.1.15...v0.1.16
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+
+### Features 🎉
+
 - feat: add guard stage detection and per-stage round-trip thresholds by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/236
 
 ### Documentation 🗒️
