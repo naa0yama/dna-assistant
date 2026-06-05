@@ -256,6 +256,10 @@ fn init_otel(
     use opentelemetry_semantic_conventions::attribute as semconv_attr;
     use tracing_opentelemetry::OpenTelemetryLayer;
 
+    // reqwest is built with `rustls-no-provider`; register ring before the first
+    // Client is created. Ignored if a provider is already installed (e.g. in tests).
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // Resolve endpoint: explicit override > env var > disabled.
     let endpoint = if endpoint_override.is_empty() {
         std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -782,5 +786,33 @@ mod tests {
         let _handles = super::ProcessMetricHandles::register(&meter);
         // handles drop here, before provider.shutdown()
         let _ = provider.shutdown();
+    }
+
+    #[test]
+    #[cfg(feature = "otel")]
+    fn init_otel_with_unreachable_endpoint_does_not_panic() {
+        // Regression test: init_otel must not panic when an endpoint is configured
+        // but unreachable. This exercises the exporter build path that was broken
+        // in the OTel 0.31 → 0.32 upgrade (only the no-endpoint path was tested before).
+        let (layer, tracer, meter, _log_bridge, logger, process_metrics) =
+            super::init_otel("http://127.0.0.1:1", "");
+        assert!(
+            layer.is_some(),
+            "OTel layer should be Some when endpoint is set"
+        );
+        assert!(tracer.is_some());
+        assert!(meter.is_some());
+        assert!(logger.is_some());
+        assert!(process_metrics.is_some());
+        // Shut down cleanly so background threads don't outlive the test.
+        if let Some(p) = tracer {
+            let _ = p.shutdown();
+        }
+        if let Some(p) = meter {
+            let _ = p.shutdown();
+        }
+        if let Some(p) = logger {
+            let _ = p.shutdown();
+        }
     }
 }
