@@ -217,13 +217,16 @@ function syncDetectorUI() {
   detResultTime.textContent = s.result.time || "--";
 }
 
-function updateDetectorFromEvent(kind, elapsedSecs) {
+function updateDetectorFromEvent(payload) {
+  const { kind, elapsed_secs: elapsedSecs, stage_kind } = payload;
   const now = new Date().toLocaleTimeString("ja-JP", { hour12: false });
   switch (kind) {
-    case "RoundVisible":
-      detectorState.round = { state: "ok", label: "Visible", time: now };
+    case "RoundVisible": {
+      const label = stage_kind ?? "Visible";
+      detectorState.round = { state: "ok", label, time: now };
       startRoundtripTimer();
       break;
+    }
     case "RoundGone":
       detectorState.round = { state: "unknown", label: "Gone", time: now };
       stopRoundtripTimer(elapsedSecs);
@@ -305,7 +308,7 @@ listen("monitor-status", (event) => {
 listen("detection-event", (event) => {
   const { kind, detail, round_number, elapsed, elapsed_secs } = event.payload;
   addLogEntry(kind, detail, round_number, elapsed);
-  updateDetectorFromEvent(kind, elapsed_secs);
+  updateDetectorFromEvent(event.payload);
 });
 
 listen("round-reset", () => {

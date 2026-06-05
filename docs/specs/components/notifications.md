@@ -68,6 +68,30 @@ RoundTrip 通知は探検/ガードでステージ別の閾値を持つ。
 `StageKind::Guard` の場合は Guard 閾値を使用。`Unknown` は Exploration 閾値に fallback。
 UI では探検閾値の下にガード専用ブロックを縦配置 (既存ブロックのラベル変更なし)。
 
+## Stage Kind Payload
+
+`RoundVisible` イベント発火時、`DetectionEventPayload` に `stage_kind` フィールドを付与してフロントエンドへ送信する。
+
+| `StageKind`   | `stage_kind` フィールド |
+| ------------- | ----------------------- |
+| `Exploration` | `Some("探検")`          |
+| `Guard`       | `Some("ガード")`        |
+| `Unknown`     | `None`                  |
+
+`RoundGone` 等の他のイベントでは `stage_kind: None`。
+
+フロントエンド (`ui/main.js`) は `stage_kind` を Round バッジのラベルとして使用する:
+
+```js
+case "RoundVisible": {
+  const label = payload.stage_kind ?? "Visible";
+  detectorState.round = { state: "ok", label, time: now };
+  break;
+}
+```
+
+`stage_kind` が `None` の場合(OCR 未実行 / `Unknown`)はフォールバックとして `"Visible"` を表示。
+
 ## Non-Goals
 
 - Slack / LINE 等の第三チャンネル
