@@ -4,6 +4,16 @@
 
 ### Features 🎉
 
+- feat(monitor): retry stage-kind OCR within 5s after Unknown RoundVisible by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/240
+
+**Full Changelog**: https://github.com/naa0yama/dna-assistant/compare/v0.1.16...v0.1.17
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+
+### Features 🎉
+
 - feat(monitor): surface stage kind in round badge by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/237
 
 ### Bug Fixes 🐌
