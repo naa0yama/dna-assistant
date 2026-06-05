@@ -1,7 +1,9 @@
 # Changelog
 
 ## [v0.1.15](https://github.com/naa0yama/dna-assistant/compare/v0.1.14...v0.1.15) - 2026-06-05
+
 ### Development Environment 🔧
+
 - chore(deps): update taiki-e/install-action action to v2.79.7 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/219
 - chore(deps): update taiki-e/install-action action to v2.79.8 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/221
 - chore(deps): update dependency openobserve/openobserve to v0.90.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/223
