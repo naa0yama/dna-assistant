@@ -320,6 +320,27 @@
         </div>
       </div>
 
+      <!-- RoundTrip (Guard) -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body p-4">
+          <span class="text-xs text-base-content/50 font-semibold uppercase mb-2">RoundTrip (ガード)</span>
+          <div class="grid grid-cols-3 gap-x-6 gap-y-3">
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs text-success">Green (sec)</span></div>
+              <input type="number" min="10" max="600" step="5" class="input input-bordered input-sm" data-key="roundtrip_green_guard">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs text-warning">Yellow (sec)</span></div>
+              <input type="number" min="10" max="600" step="5" class="input input-bordered input-sm" data-key="roundtrip_yellow_guard">
+            </label>
+            <label class="form-control">
+              <div class="label py-0"><span class="label-text text-xs text-error">Red (sec)</span></div>
+              <input type="number" min="10" max="600" step="5" class="input input-bordered input-sm" data-key="roundtrip_red_guard">
+            </label>
+          </div>
+        </div>
+      </div>
+
       <!-- Notifications -->
       <div class="card bg-base-100 shadow-md">
         <div class="card-body p-4">
