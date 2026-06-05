@@ -49,17 +49,17 @@ impl RoundDetector {
     ///
     /// The round text "探検 現在のラウンド：XX" always starts from the left
     /// edge with white characters (max brightness ~255). Result screens and
-    /// other non-text backgrounds never reach this brightness in the left area.
+    /// other non-text backgrounds never reach this brightness in the left half.
     #[must_use]
     pub fn has_bright_text_left(&self, roi_image: &RgbaImage) -> bool {
-        let quarter_w = roi_image.width() / 4;
-        if quarter_w == 0 {
+        let half_w = roi_image.width() / 2;
+        if half_w == 0 {
             return false;
         }
 
         let mut max_brightness: u8 = 0;
         for y in 0..roi_image.height() {
-            for x in 0..quarter_w {
+            for x in 0..half_w {
                 let p = roi_image.get_pixel(x, y).0;
                 let avg = (u16::from(p[0])
                     .saturating_add(u16::from(p[1]))
@@ -102,6 +102,7 @@ impl Detector for RoundDetector {
                 text_present: true,
                 white_ratio: ratio,
                 round_number: None,
+                stage_kind: None,
                 timestamp: now,
             }]
         } else {

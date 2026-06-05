@@ -125,6 +125,9 @@ pub struct MonitorConfig {
     /// Whether to notify on `GenemonVisible` events.
     #[serde(default = "default_true")]
     pub notify_genemon_enabled: bool,
+    /// Sustain for `GenemonVisible` before notification (sec).
+    #[serde(default = "default_genemon_sustain", with = "serde_duration_secs")]
+    pub notify_genemon_sustain: Duration,
     /// Whether to notify on `ResultScreen` events.
     #[serde(default = "default_true")]
     pub notify_result_enabled: bool,
@@ -137,6 +140,21 @@ pub struct MonitorConfig {
     /// `RoundTrip` Red threshold (sec). Above Yellow = alert.
     #[serde(default = "default_roundtrip_red", with = "serde_duration_secs")]
     pub roundtrip_red: Duration,
+    /// `RoundTrip` Green threshold for Guard stages (sec). Below = normal.
+    #[serde(
+        default = "default_roundtrip_green_guard",
+        with = "serde_duration_secs"
+    )]
+    pub roundtrip_green_guard: Duration,
+    /// `RoundTrip` Yellow threshold for Guard stages (sec). Above Green = warning.
+    #[serde(
+        default = "default_roundtrip_yellow_guard",
+        with = "serde_duration_secs"
+    )]
+    pub roundtrip_yellow_guard: Duration,
+    /// `RoundTrip` Red threshold for Guard stages (sec). Above Yellow = alert.
+    #[serde(default = "default_roundtrip_red_guard", with = "serde_duration_secs")]
+    pub roundtrip_red_guard: Duration,
     /// Notify when `RoundTrip` exceeds Green threshold.
     #[serde(default)]
     pub notify_roundtrip_green: bool,
@@ -224,6 +242,21 @@ const fn default_roundtrip_red() -> Duration {
 }
 
 #[cfg(target_os = "windows")]
+const fn default_roundtrip_green_guard() -> Duration {
+    Duration::from_secs(60)
+}
+
+#[cfg(target_os = "windows")]
+const fn default_roundtrip_yellow_guard() -> Duration {
+    Duration::from_secs(120)
+}
+
+#[cfg(target_os = "windows")]
+const fn default_roundtrip_red_guard() -> Duration {
+    Duration::from_secs(180)
+}
+
+#[cfg(target_os = "windows")]
 const fn default_notification_max_repeat() -> u32 {
     5
 }
@@ -231,6 +264,11 @@ const fn default_notification_max_repeat() -> u32 {
 #[cfg(target_os = "windows")]
 const fn default_capture_lost_sustain() -> Duration {
     Duration::from_secs(5)
+}
+
+#[cfg(target_os = "windows")]
+const fn default_genemon_sustain() -> Duration {
+    Duration::from_secs(2)
 }
 
 #[cfg(target_os = "windows")]
@@ -264,10 +302,14 @@ impl Default for MonitorConfig {
             notify_round_enabled: true,
             notify_dialog_enabled: true,
             notify_genemon_enabled: true,
+            notify_genemon_sustain: Duration::from_secs(2),
             notify_result_enabled: true,
             roundtrip_green: Duration::from_secs(60),
             roundtrip_yellow: Duration::from_secs(120),
             roundtrip_red: Duration::from_secs(180),
+            roundtrip_green_guard: Duration::from_secs(60),
+            roundtrip_yellow_guard: Duration::from_secs(120),
+            roundtrip_red_guard: Duration::from_secs(180),
             notify_roundtrip_green: false,
             notify_roundtrip_yellow: false,
             notify_roundtrip_red: true,
@@ -718,6 +760,7 @@ mod platform {
 
         // Round state tracking
         let mut current_round: Option<u32> = None;
+        let mut current_stage_kind = dna_detector::round_number::StageKind::Unknown;
         let mut round_start: Option<Instant> = None;
         // When ResultScreenVisible was confirmed; drives ResultIdle notifications.
         let mut result_idle_start: Option<Instant> = None;
@@ -849,6 +892,7 @@ mod platform {
                     .is_ok()
                 {
                     current_round = None;
+                    current_stage_kind = dna_detector::round_number::StageKind::Unknown;
                     round_start = None;
                     result_idle_start = None;
                     result_scanning = false;
@@ -1028,7 +1072,7 @@ mod platform {
                 // RoundTrip threshold check: fires during RoundVisible
                 // based on elapsed time since round_start.
                 if let Some(start) = round_start {
-                    notification_mgr.notify_roundtrip(start.elapsed());
+                    notification_mgr.notify_roundtrip(start.elapsed(), current_stage_kind);
                 }
 
                 // ResultIdle: fires when result screen is idle (no new round started).
@@ -1067,7 +1111,10 @@ mod platform {
                         let mut elapsed_duration: Option<Duration> = None;
 
                         match event {
-                            DetectionEvent::RoundVisible { .. } => {
+                            DetectionEvent::RoundVisible { stage_kind, .. } => {
+                                if let Some(kind) = stage_kind {
+                                    current_stage_kind = *kind;
+                                }
                                 if round_start.is_none() {
                                     round_start = Some(Instant::now());
                                 }
@@ -1438,10 +1485,17 @@ mod platform {
                     );
 
                     if has_round_text {
-                        // Enrich RoundVisible with confirmed round number
+                        let stage_kind = dna_detector::round_number::parse_stage_kind(&text);
+                        // Enrich RoundVisible with confirmed round number and stage kind
                         for event in raw_events.iter_mut() {
-                            if let DetectionEvent::RoundVisible { round_number, .. } = event {
+                            if let DetectionEvent::RoundVisible {
+                                round_number,
+                                stage_kind: sk,
+                                ..
+                            } = event
+                            {
                                 *round_number = round_num;
+                                *sk = Some(stage_kind);
                             }
                         }
                     } else {

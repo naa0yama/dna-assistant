@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use dna_detector::event::DetectionEvent;
+use dna_detector::round_number::StageKind;
 use image::ImageFormat;
 use tracing::{debug, instrument, warn};
 
@@ -98,7 +99,7 @@ const fn trigger_config(kind: TriggerKind, cfg: &MonitorConfig) -> TriggerConfig
             body: "リザルト画面が表示されたまま次のラウンドが始まっていません",
         },
         TriggerKind::GenemonVisible => TriggerConfig {
-            sustain_duration: Duration::from_secs(0),
+            sustain_duration: cfg.notify_genemon_sustain,
             cooldown: cfg.notification_cooldown,
             title: "ジェネモン発見",
             body: "ジェネモンを探して解放しよう",
@@ -190,15 +191,27 @@ impl NotificationManager {
     /// Notify `RoundTrip` threshold exceeded (called from monitor loop).
     ///
     /// Compares elapsed time against Green/Yellow/Red thresholds and sends
-    /// the highest applicable notification.
-    pub fn notify_roundtrip(&mut self, elapsed: Duration) {
+    /// the highest applicable notification. Guard stages use separate thresholds.
+    pub fn notify_roundtrip(&mut self, elapsed: Duration, stage_kind: StageKind) {
         let now = Instant::now();
 
-        let (kind, threshold_name) = if elapsed >= self.config.roundtrip_red {
+        let (green, yellow, red) = match stage_kind {
+            StageKind::Guard => (
+                self.config.roundtrip_green_guard,
+                self.config.roundtrip_yellow_guard,
+                self.config.roundtrip_red_guard,
+            ),
+            _ => (
+                self.config.roundtrip_green,
+                self.config.roundtrip_yellow,
+                self.config.roundtrip_red,
+            ),
+        };
+        let (kind, threshold_name) = if elapsed >= red {
             (TriggerKind::RoundTripRed, "Red")
-        } else if elapsed >= self.config.roundtrip_yellow {
+        } else if elapsed >= yellow {
             (TriggerKind::RoundTripYellow, "Yellow")
-        } else if elapsed >= self.config.roundtrip_green {
+        } else if elapsed >= green {
             (TriggerKind::RoundTripGreen, "Green")
         } else {
             return; // Below all thresholds
@@ -216,7 +229,11 @@ impl NotificationManager {
             if self.roundtrip_repeat_count >= self.config.notification_max_repeat {
                 return;
             }
-            let threshold = self.threshold_for(kind);
+            let threshold = match kind {
+                TriggerKind::RoundTripRed => red,
+                TriggerKind::RoundTripYellow => yellow,
+                _ => green,
+            };
             if let Some(&last) = self.last_notified.get(&kind)
                 && now.duration_since(last) < threshold
             {
@@ -403,8 +420,9 @@ impl NotificationManager {
 
     /// Clear a condition when the opposite event is received.
     ///
-    /// Resets the repeat counter and last-notified time for dialog/genemon so
-    /// a fresh occurrence after dismissal is not blocked by the previous cooldown.
+    /// Resets the repeat counter for dialog/genemon. For `DialogVisible`, also
+    /// clears `last_notified` so a fresh occurrence is not blocked by cooldown.
+    /// `GenemonVisible` retains `last_notified` to suppress OCR noise spam.
     fn clear_condition(&mut self, kind: TriggerKind) {
         self.condition_start.remove(&kind);
         if matches!(
@@ -412,6 +430,10 @@ impl NotificationManager {
             TriggerKind::DialogVisible | TriggerKind::GenemonVisible
         ) {
             self.reset_repeat_count(kind);
+        }
+        // DialogVisible only: reset cooldown so a fresh occurrence is not blocked.
+        // GenemonVisible keeps last_notified to prevent OCR noise spam.
+        if kind == TriggerKind::DialogVisible {
             self.last_notified.remove(&kind);
         }
     }
@@ -485,16 +507,6 @@ impl NotificationManager {
             TriggerKind::RoundTripYellow
         } else {
             TriggerKind::RoundTripGreen
-        }
-    }
-
-    /// Return the threshold duration for a `RoundTrip` kind.
-    const fn threshold_for(&self, kind: TriggerKind) -> Duration {
-        match kind {
-            TriggerKind::RoundTripRed => self.config.roundtrip_red,
-            TriggerKind::RoundTripYellow => self.config.roundtrip_yellow,
-            // Green or any other kind (only called from notify_roundtrip).
-            _ => self.config.roundtrip_green,
         }
     }
 
@@ -883,6 +895,7 @@ mod tests {
         MonitorConfig {
             notify_dialog_sustain: Duration::ZERO,
             notify_round_sustain: Duration::ZERO,
+            notify_genemon_sustain: Duration::ZERO,
             notify_dialog_enabled: true,
             notify_round_enabled: true,
             notify_genemon_enabled: true,
@@ -942,6 +955,7 @@ mod tests {
             text_present: true,
             white_ratio: 0.5,
             round_number: Some(1),
+            stage_kind: None,
             timestamp: std::time::Instant::now(),
         }
     }
@@ -1114,5 +1128,43 @@ mod tests {
             mgr.notify_result_idle(Duration::from_secs(5));
         }
         assert_eq!(mgr.result_idle_count(), cfg.notification_max_repeat);
+    }
+
+    // ── Guard threshold selection ────────────────────────────────────────────
+
+    #[test]
+    fn guard_threshold_used_for_guard_stage() {
+        let cfg = MonitorConfig {
+            roundtrip_green_guard: Duration::from_secs(30),
+            roundtrip_yellow_guard: Duration::from_secs(60),
+            roundtrip_red_guard: Duration::from_secs(90),
+            roundtrip_green: Duration::from_secs(200),
+            roundtrip_yellow: Duration::from_secs(400),
+            roundtrip_red: Duration::from_secs(600),
+            notify_roundtrip_red: true,
+            ..test_config_zero()
+        };
+        let mut mgr = new_mgr(&cfg);
+        // 100s elapsed — exceeds Guard red (90s) but not Exploration red (600s)
+        mgr.notify_roundtrip(Duration::from_secs(100), StageKind::Guard);
+        assert!(mgr.was_notified(TriggerKind::RoundTripRed));
+    }
+
+    #[test]
+    fn exploration_threshold_used_for_unknown_stage() {
+        let cfg = MonitorConfig {
+            roundtrip_green: Duration::from_secs(60),
+            roundtrip_yellow: Duration::from_secs(120),
+            roundtrip_red: Duration::from_secs(180),
+            roundtrip_green_guard: Duration::from_secs(9999),
+            roundtrip_yellow_guard: Duration::from_secs(9999),
+            roundtrip_red_guard: Duration::from_secs(9999),
+            notify_roundtrip_red: true,
+            ..test_config_zero()
+        };
+        let mut mgr = new_mgr(&cfg);
+        // 200s elapsed — exceeds Exploration red (180s) but not Guard red (9999s)
+        mgr.notify_roundtrip(Duration::from_secs(200), StageKind::Unknown);
+        assert!(mgr.was_notified(TriggerKind::RoundTripRed));
     }
 }

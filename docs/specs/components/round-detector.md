@@ -4,7 +4,7 @@
 
 ## 1.1 背景
 
-Duet Night Abyss の探検モードでは、画面左上に "探検 現在のラウンド：XX" というラウンド表示テキストが常時表示される。このテキストが消えるタイミング(リザルト画面、カットシーン、ラウンド終了など)を検知することで、ゲーム状態の遷移を把握できる。
+Duet Night Abyss の探検モード/ガードモードでは、画面左上に "探検 現在のラウンド：XX" または "ガード 現在のラウンド：XX" というラウンド表示テキストが常時表示される。このテキストが消えるタイミング(リザルト画面、カットシーン、ラウンド終了など)を検知することで、ゲーム状態の遷移を把握できる。
 
 問題点:
 
@@ -31,17 +31,17 @@ chroma フィルターが重要な役割を果たす。ラウンドテキスト�
 
 ### 左端テキスト確認
 
-ROI 左端 1/4 領域の最大輝度を計測し、`text_left_brightness_min`(`200`)以上であることを追加条件とする。ラウンドテキスト "探検" は常に左端から白文字(輝度 `~255`)で始まるが、リザルト画面等の背景は左端が暗い(`~168` 以下)ため、この条件で分離できる。
+ROI 左端 1/4 領域の最大輝度を計測し、`text_left_brightness_min`(`200`)以上であることを追加条件とする。ラウンドテキスト("探検" / "ガード" 共通)は常に左端から白文字(輝度 `~255`)で始まるが、リザルト画面等の背景は左端が暗い(`~168` 以下)ため、この条件で分離できる。
 
 ### 判定閾値
 
 3 条件の AND で `RoundVisible` を判定する:
 
-| 指標                        | 閾値                             | 意味                                 |
-| --------------------------- | -------------------------------- | ------------------------------------ |
-| `text_ratio`                | `>= 0.03` (3%)                   | テキストピクセル密度が十分           |
-| `has_bright_text_left`      | ROI 左端 1/4 の最大輝度 `>= 200` | 左端に白いテキスト("探検")が存在する |
-| 上記の AND 条件を満たさない | —                                | テキスト消失(`RoundGone`)            |
+| 指標                        | 閾値                             | 意味                                            |
+| --------------------------- | -------------------------------- | ----------------------------------------------- |
+| `text_ratio`                | `>= 0.03` (3%)                   | テキストピクセル密度が十分                      |
+| `has_bright_text_left`      | ROI 左端 1/4 の最大輝度 `>= 200` | 左端に白いテキスト("探検" / "ガード")が存在する |
+| 上記の AND 条件を満たさない | —                                | テキスト消失(`RoundGone`)                       |
 
 `text_left_brightness_min` は、リザルト画面のような全体的に明るいが左端が暗い背景を排除するためのガード条件である。リザルト画面の左端最大輝度は `~168` であり、閾値 `200` で分離される。
 
@@ -71,7 +71,7 @@ flowchart TD
     CLASSIFY --> RATIO["text_ratio 算出\ntext_count / total_pixels"]
     RATIO --> LEFT_CHECK["左端 1/4 最大輝度チェック\nhas_bright_text_left()"]
     LEFT_CHECK --> THRESHOLD{"text_ratio >= 0.03\nAND left_max >= 200?"}
-    THRESHOLD -- Yes --> VISIBLE["RoundVisible イベント発行\n(round_number: None)"]
+    THRESHOLD -- Yes --> VISIBLE["RoundVisible イベント発行\n(round_number: None, stage_kind: None)"]
     THRESHOLD -- No --> GONE["RoundGone イベント発行"]
 ```
 
@@ -143,10 +143,10 @@ RoundDetectorConfig {
 
 ### 発行イベント
 
-| イベント                       | フィールド                                                                                  | 説明                                                               |
-| ------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `DetectionEvent::RoundVisible` | `text_present: bool`, `white_ratio: f64`, `round_number: Option<u32>`, `timestamp: Instant` | テキスト検出(ラウンド進行中)。OCR 利用可能時は `round_number` 付与 |
-| `DetectionEvent::RoundGone`    | `white_ratio: f64`, `timestamp: Instant`                                                    | テキスト消失(リザルト画面、カットシーン、ラウンド終了)             |
+| イベント                       | フィールド                                                                                                                   | 説明                                                                                 |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `DetectionEvent::RoundVisible` | `text_present: bool`, `white_ratio: f64`, `round_number: Option<u32>`, `stage_kind: Option<StageKind>`, `timestamp: Instant` | テキスト検出(ラウンド進行中)。OCR 利用可能時は `round_number` と `stage_kind` を付与 |
+| `DetectionEvent::RoundGone`    | `white_ratio: f64`, `timestamp: Instant`                                                                                     | テキスト消失(リザルト画面、カットシーン、ラウンド終了)                               |
 
 ## 1.6 検証済み解像度
 
@@ -222,5 +222,6 @@ flowchart TD
 ## 1.10 検討事項
 
 - [x] OCR ベースのラウンド番号抽出 — `run_ocr()` で `round_number` を `RoundVisible` に付与。OCR で "ラウンド" テキスト未検出時は偽陽性として `RoundGone` に置換
+- [x] ステージ種別抽出 — `parse_stage_kind()` で OCR テキストから `StageKind` (`Guard`/`Exploration`/`Unknown`) を解析し `stage_kind` フィールドに付与。`Guard` ステージは RoundTrip で専用閾値を使用
 - [ ] `dna-capture` がクライアント領域のみのフレーム(`GetClientRect`)を提供する場合、タイトルバー検出は不要になるが、無害(`0` を返す)
 - [ ] `DebouncedDetector` との統合仕様の詳細化(スパイク耐性の定量評価)
