@@ -222,6 +222,6 @@ flowchart TD
 ## 1.10 検討事項
 
 - [x] OCR ベースのラウンド番号抽出 — `run_ocr()` で `round_number` を `RoundVisible` に付与。OCR で "ラウンド" テキスト未検出時は偽陽性として `RoundGone` に置換
-- [x] ステージ種別抽出 — `parse_stage_kind()` で OCR テキストから `StageKind` (`Guard`/`Exploration`/`Unknown`) を解析し `stage_kind` フィールドに付与。`Guard` ステージは RoundTrip で専用閾値を使用
+- [x] ステージ種別抽出 — `parse_stage_kind()` で OCR テキストから `StageKind` (`Guard`/`Exploration`/`Unknown`) を解析し `stage_kind` フィールドに付与。`Unknown` 結果は `current_stage_kind` を上書きしない(リトライ待ち)。`Guard` ステージは RoundTrip で専用閾値を使用
 - [ ] `dna-capture` がクライアント領域のみのフレーム(`GetClientRect`)を提供する場合、タイトルバー検出は不要になるが、無害(`0` を返す)
 - [ ] `DebouncedDetector` との統合仕様の詳細化(スパイク耐性の定量評価)

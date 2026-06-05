@@ -227,6 +227,12 @@ function updateDetectorFromEvent(payload) {
       startRoundtripTimer();
       break;
     }
+    case "StageKindUpdate": {
+      if (stage_kind && detectorState.round) {
+        detectorState.round = { ...detectorState.round, label: stage_kind };
+      }
+      break;
+    }
     case "RoundGone":
       detectorState.round = { state: "unknown", label: "Gone", time: now };
       stopRoundtripTimer(elapsedSecs);

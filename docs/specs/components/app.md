@@ -188,13 +188,42 @@ pub fn reset_round(state: State<'_, MonitorState>);
 
 バックエンドからフロントエンドへの状態通知には Tauri のイベントシステムを使用する。
 
-| イベント名        | ペイロード                         | タイミング                     |
-| ----------------- | ---------------------------------- | ------------------------------ |
-| `monitor-status`  | `MonitorStatus` (JSON)             | 状態変化時                     |
-| `detection-event` | `{ kind: string, detail: string }` | 検出イベント発生時             |
-| `round-reset`     | `()` (empty)                       | `reset_round` IPC 処理完了直後 |
+| イベント名        | ペイロード                     | タイミング                     |
+| ----------------- | ------------------------------ | ------------------------------ |
+| `monitor-status`  | `MonitorStatus` (JSON)         | 状態変化時                     |
+| `detection-event` | `DetectionEventPayload` (JSON) | 検出イベント発生時             |
+| `round-reset`     | `()` (empty)                   | `reset_round` IPC 処理完了直後 |
 
 フロントエンドは `listen()` でイベントを購読し、リアルタイムに UI を更新する。
+
+### `DetectionEventPayload` スキーマ
+
+```typescript
+{
+  kind: string;          // イベント種別 (下表)
+  detail: string;        // 人間可読な説明
+  round_number?: number; // 現在のラウンド番号 (OCR 確定済み)
+  elapsed_secs?: number; // ラウンド経過秒数
+  elapsed?: string;      // ラウンド経過時間 (表示用文字列, 例: "1:23")
+  stage_kind?: string;   // ステージ種別ラベル ("探検" / "ガード")
+}
+```
+
+| `kind` 値             | 送信タイミング                                                         |
+| --------------------- | ---------------------------------------------------------------------- |
+| `RoundVisible`        | `TransitionFilter` がラウンド開始を確定                                |
+| `RoundGone`           | `TransitionFilter` がラウンド終了を確定                                |
+| `StageKindUpdate`     | `RoundVisible` 確定後のリトライ OCR でステージ種別が初めて確定したとき |
+| `DialogVisible`       | ダイアログ検出                                                         |
+| `DialogGone`          | ダイアログ消失                                                         |
+| `ResultScreenVisible` | リザルト画面検出                                                       |
+| `ResultScreenGone`    | リザルト画面消失                                                       |
+| `SkillGreyed`         | スキルグレーアウト検出                                                 |
+| `GenemonVisible`      | ジェネモン検出                                                         |
+
+### ステージ種別リトライ
+
+`RoundVisible` 確定フレームで `stage_kind` が `Unknown` だった場合、`stage_kind_scan_deadline`(確定から 5 秒後)を設定し、以降のフレームごとに OCR を再試行する。`Unknown` 以外の種別が検出された時点で `StageKindUpdate` イベントを送信しデッドラインをクリアする。`RoundGone` でもデッドラインをクリアする。
 
 ## 1.6 通知判定ロジック
 
