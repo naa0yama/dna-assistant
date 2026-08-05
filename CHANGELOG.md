@@ -2,6 +2,51 @@
 
 ## What's Changed
 
+### Development Environment 🔧
+
+- chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/243
+- chore(deps): update mise to v2026.5.18 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/245
+- chore(deps): update mise to v2026.6.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/246
+- chore(deps): update all action update to v4.1.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/247
+- chore(deps): update all action update to v2.81.5 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/248
+- chore(deps): update all action update to v2.81.6 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/249
+- chore(deps): update dependency github:naa0yama/graft to v0.5.8 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/250
+- chore(deps): update all action update to v2.81.7 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/251
+- chore(deps): update mise to v2026.6.1 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/252
+- chore(deps): update dependency github:naa0yama/graft to v0.5.9 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/253
+- chore(deps): update all action update to v2.81.8 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/255
+- chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/254
+- chore(deps): update all action update to v2.81.9 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/256
+- chore(deps): update all action update to v2.81.10 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/257
+- chore(deps): update mise to v2026.6.2 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/258
+- chore(deps): update mise to v2026.6.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/260
+- chore(deps): update mise to v2026.6.4 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/261
+- chore(deps): update mise to v2026.6.5 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/262
+- chore(deps): update mise to v2026.6.6 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/263
+- chore(deps): update mise to v2026.6.9 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/264
+- chore(deps): lock file maintenance by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/265
+- chore(deps): update mise to v2026.6.10 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/266
+- chore(deps): update all action update by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/268
+- chore(deps): update dependency aqua:embarkstudios/cargo-deny to v0.19.9 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/269
+- chore(deps): update mise (patch) by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/270
+- chore(deps): update all action update by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/271
+- chore(deps): update all action update by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/273
+- chore(deps): update dependency aqua:cli/cli to v2.96.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/259
+- chore(deps): update dependency usage to v3.5.3 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/242
+- chore(deps): update docker/dockerfile docker tag to v1.26.0 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/274
+- chore(deps): update dependency cargo:cargo-nextest to v0.9.140 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/278
+- chore(deps): update dependency github:naa0yama/graft to v0.5.11 by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/279
+
+### Other Changes
+
+- chore(deps): update rust crate anyhow to v1.0.103 [security] by @renovate[bot] in https://github.com/naa0yama/dna-assistant/pull/275
+
+**Full Changelog**: https://github.com/naa0yama/dna-assistant/compare/v0.1.17...v0.1.18
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+
 ### Features 🎉
 
 - feat(monitor): retry stage-kind OCR within 5s after Unknown RoundVisible by @naa0yama in https://github.com/naa0yama/dna-assistant/pull/240
